@@ -7,9 +7,7 @@ export const env = {
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   mapboxPublicToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
   mapboxSecretToken: process.env.MAPBOX_SECRET_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
-  razorpayKeyId: process.env.RAZORPAY_KEY_ID,
-  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET,
-  razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
+  credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
 };
 
 export function hasSupabaseConfig() {

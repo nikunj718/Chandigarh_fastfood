@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError, requireRestaurantManager } from "@/lib/auth";
+import { encryptCredential, hasCompleteRazorpayCredentials, maskRazorpayKeyId } from "@/lib/restaurant-credentials";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
+
+const credentialFields = ["razorpayKeyId", "razorpayKeySecret", "razorpayWebhookSecret"] as const;
+const credentialSchema = z.object({
+  razorpayKeyId: z.string().trim().min(3).max(100).optional(),
+  razorpayKeySecret: z.string().trim().min(8).max(500).optional(),
+  razorpayWebhookSecret: z.string().trim().min(8).max(500).optional(),
+  clearRazorpayCredentials: z.boolean().optional().default(false),
+});
 
 const settingsSchema = z.object({
   name: z.string().trim().min(2).max(100).optional(),
@@ -13,14 +23,49 @@ const settingsSchema = z.object({
   deliveryFeePerKm: z.number().min(0).max(9999).optional(),
   deliveryRadiusKm: z.number().min(0.1).max(100).optional(),
   active: z.boolean().optional(),
+}).merge(credentialSchema).superRefine((value, context) => {
+  const supplied = credentialFields.filter((field) => Boolean(value[field]));
+  if (value.clearRazorpayCredentials && supplied.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Clear credentials separately from adding new credentials." });
+  }
+  if (supplied.length > 0 && supplied.length !== credentialFields.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Provide the Key ID, Key Secret, and Webhook Secret together." });
+  }
 });
+
+const restaurantColumns = "id,created_by,name,slug,description,phone,address_text,latitude,longitude,delivery_fee_base,delivery_fee_per_km,delivery_radius_km,active,created_at,updated_at,razorpay_key_id,razorpay_key_secret,razorpay_webhook_secret";
+
+function safeRestaurantForAdmin(restaurant: Record<string, unknown>) {
+  const { razorpay_key_id, razorpay_key_secret, razorpay_webhook_secret, ...safeRestaurant } = restaurant;
+  return {
+    ...safeRestaurant,
+    razorpayConfigured: hasCompleteRazorpayCredentials({
+      razorpay_key_id: typeof razorpay_key_id === "string" ? razorpay_key_id : null,
+      razorpay_key_secret: typeof razorpay_key_secret === "string" ? razorpay_key_secret : null,
+      razorpay_webhook_secret: typeof razorpay_webhook_secret === "string" ? razorpay_webhook_secret : null,
+    }),
+    razorpayKeyIdHint: maskRazorpayKeyId(typeof razorpay_key_id === "string" ? razorpay_key_id : null),
+  };
+}
+
+function credentialPayload(body: z.infer<typeof settingsSchema>) {
+  if (body.clearRazorpayCredentials) {
+    return { razorpay_key_id: null, razorpay_key_secret: null, razorpay_webhook_secret: null };
+  }
+  if (!body.razorpayKeyId) return {};
+  return {
+    razorpay_key_id: body.razorpayKeyId,
+    razorpay_key_secret: encryptCredential(body.razorpayKeySecret!),
+    razorpay_webhook_secret: encryptCredential(body.razorpayWebhookSecret!),
+  };
+}
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ restaurantId: string }> }) {
   try {
     const { restaurantId } = await context.params;
-    const { supabase } = await requireRestaurantManager(restaurantId);
+    const { supabase, membership } = await requireRestaurantManager(restaurantId);
     const [restaurant, categories, orders, members] = await Promise.all([
-      supabase.from("restaurants").select("*").eq("id", restaurantId).single(),
+      supabase.from("restaurants").select(restaurantColumns).eq("id", restaurantId).single(),
       supabase.from("menu_categories").select("*,menu_items(*)").eq("restaurant_id", restaurantId).order("sort_order"),
       supabase.from("orders").select("id,status,payment_method,payment_status,total,created_at,delivery_assignments(rider_id)").eq("restaurant_id", restaurantId).order("created_at", { ascending: false }).limit(30),
       supabase.from("restaurant_memberships").select("user_id,role,profiles(display_name,phone)").eq("restaurant_id", restaurantId),
@@ -29,7 +74,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ re
     if (categories.error) throw categories.error;
     if (orders.error) throw orders.error;
     if (members.error) throw members.error;
-    return NextResponse.json({ restaurant: restaurant.data, categories: categories.data, orders: orders.data, members: members.data });
+    return NextResponse.json({ restaurant: safeRestaurantForAdmin(restaurant.data as Record<string, unknown>), categories: categories.data, orders: orders.data, members: members.data, membershipRole: membership.role });
   } catch (error) { return apiError(error, "Restaurant operations could not be loaded."); }
 }
 
@@ -37,7 +82,9 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ res
   try {
     const { restaurantId } = await context.params;
     const body = settingsSchema.parse(await request.json());
-    const { supabase } = await requireRestaurantManager(restaurantId);
+    const { membership } = await requireRestaurantManager(restaurantId);
+    const hasCredentialUpdate = body.clearRazorpayCredentials || Boolean(body.razorpayKeyId);
+    if (hasCredentialUpdate && membership.role !== "owner") throw new Error("FORBIDDEN");
     const payload = {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
@@ -49,12 +96,14 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ res
       ...(body.deliveryFeePerKm !== undefined ? { delivery_fee_per_km: body.deliveryFeePerKm } : {}),
       ...(body.deliveryRadiusKm !== undefined ? { delivery_radius_km: body.deliveryRadiusKm } : {}),
       ...(body.active !== undefined ? { active: body.active } : {}),
+      ...credentialPayload(body),
     };
-    const { data, error } = await supabase.from("restaurants").update(payload).eq("id", restaurantId).select("*").single();
+    const admin = getSupabaseAdminClient();
+    const { data, error } = await admin.from("restaurants").update(payload).eq("id", restaurantId).select(restaurantColumns).single();
     if (error) throw error;
-    return NextResponse.json(data);
+    return NextResponse.json(safeRestaurantForAdmin(data as Record<string, unknown>));
   } catch (error) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: "Check the restaurant settings and try again." }, { status: 400 });
+    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message ?? "Check the restaurant settings and try again." }, { status: 400 });
     return apiError(error, "Restaurant settings could not be saved.");
   }
 }
