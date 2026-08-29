@@ -1,0 +1,22 @@
+const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const publicKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+export const env = {
+  supabaseUrl: publicUrl,
+  supabaseAnonKey: publicKey,
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  mapboxPublicToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+  mapboxSecretToken: process.env.MAPBOX_SECRET_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+  razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET,
+  razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
+};
+
+export function hasSupabaseConfig() {
+  return Boolean(env.supabaseUrl && env.supabaseAnonKey);
+}
+
+export function assertServerEnv(...keys: Array<keyof typeof env>) {
+  const missing = keys.filter((key) => !env[key]);
+  if (missing.length) throw new Error(`Missing server configuration: ${missing.join(", ")}`);
+}

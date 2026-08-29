@@ -1,0 +1,73 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { apiError, requireUser } from "@/lib/auth";
+import { haversineKm } from "@/lib/geospatial";
+
+const restaurantSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  description: z.string().trim().max(500).optional().nullable(),
+  phone: z.string().trim().max(20).optional().nullable(),
+  addressText: z.string().trim().min(3).max(300),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
+
+function numericRestaurant(row: Record<string, unknown>) {
+  return {
+    ...row,
+    latitude: Number(row.latitude),
+    longitude: Number(row.longitude),
+    delivery_fee_base: Number(row.delivery_fee_base),
+    delivery_fee_per_km: Number(row.delivery_fee_per_km),
+    delivery_radius_km: Number(row.delivery_radius_km),
+  };
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { supabase, user } = await requireUser();
+    const slug = request.nextUrl.searchParams.get("slug");
+    const addressId = request.nextUrl.searchParams.get("addressId");
+    let query = supabase.from("restaurants").select("id,name,slug,description,phone,address_text,latitude,longitude,delivery_fee_base,delivery_fee_per_km,delivery_radius_km,active").eq("active", true).order("name");
+    if (slug) query = query.eq("slug", slug);
+    const { data: restaurants, error } = await query;
+    if (error) throw error;
+
+    let address: { latitude: number; longitude: number } | null = null;
+    if (addressId) {
+      const { data, error: addressError } = await supabase.from("customer_addresses").select("latitude,longitude").eq("id", addressId).eq("customer_id", user.id).maybeSingle();
+      if (addressError) throw addressError;
+      address = data ? { latitude: Number(data.latitude), longitude: Number(data.longitude) } : null;
+    }
+    const payload = (restaurants ?? []).map((restaurant) => {
+      const parsed = numericRestaurant(restaurant as Record<string, unknown>);
+      return { ...parsed, approximateDistanceKm: address ? haversineKm(address, parsed) : null };
+    });
+    return NextResponse.json(slug ? payload[0] ?? null : payload);
+  } catch (error) {
+    return apiError(error, "Restaurants could not be loaded.");
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = restaurantSchema.parse(await request.json());
+    const { supabase, user } = await requireUser();
+    const { data, error } = await supabase.from("restaurants").insert({
+      created_by: user.id,
+      name: body.name,
+      slug: body.slug,
+      description: body.description ?? null,
+      phone: body.phone ?? null,
+      address_text: body.addressText,
+      latitude: body.latitude,
+      longitude: body.longitude,
+    }).select("id,name,slug").single();
+    if (error) throw error;
+    return NextResponse.json(data, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Check your restaurant details and try again." }, { status: 400 });
+    return apiError(error, "The restaurant could not be created.");
+  }
+}

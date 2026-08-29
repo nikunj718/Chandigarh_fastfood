@@ -1,0 +1,8 @@
+{
+  "name": "Chandigarh Fastfood Rider",
+  "short_name": "CF Rider",
+  "start_url": "/rider",
+  "display": "standalone",
+  "background_color": "#fffaf2",
+  "theme_color": "#dc6b20"
+}
