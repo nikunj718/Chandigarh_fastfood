@@ -140,6 +140,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ re
       ownerAccountNeedsSecurity: membership.role === "owner" && !profile.data?.email_verified,
     });
   } catch (error) {
+    console.error("API Error details:", error);
     logOperationsLoadFailure(restaurantId, error);
     return apiError(error, "Restaurant operations could not be loaded.");
   }
