@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { calculateDeliveryFee } from "@/lib/geospatial";
-import { assertServerEnv, env } from "@/lib/env";
+import { calculateDeliveryFee, haversineKm } from "@/lib/geospatial";
 import type { DeliveryQuote } from "@/lib/types";
 
 export const quoteRequestSchema = z.object({
@@ -9,22 +8,23 @@ export const quoteRequestSchema = z.object({
 });
 
 type Coordinate = { latitude: number; longitude: number };
+export type RouteGeometry = { type: "LineString"; coordinates: Array<[number, number]> };
 
-export async function fetchDrivingRoute(from: Coordinate, to: Coordinate) {
-  assertServerEnv("mapboxSecretToken");
-  const coordinates = `${from.longitude},${from.latitude};${to.longitude},${to.latitude}`;
-  const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?overview=full&geometries=geojson`, {
-    headers: { Authorization: `Bearer ${env.mapboxSecretToken}` },
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("Mapbox Directions could not calculate this route.");
-  const payload = (await response.json()) as { routes?: Array<{ distance: number; duration: number; geometry: GeoJSON.LineString }> };
-  const route = payload.routes?.[0];
-  if (!route) throw new Error("No driving route is available for this address.");
-  return { distanceKm: Number((route.distance / 1000).toFixed(3)), durationSeconds: Math.round(route.duration), geometry: route.geometry };
+export function estimateDeliveryRoute(from: Coordinate, to: Coordinate) {
+  const directDistanceKm = haversineKm(from, to);
+  // A modest road-distance multiplier produces a safer delivery-radius and fee estimate
+  // without contacting any commercial routing service.
+  const distanceKm = Number((directDistanceKm * 1.25).toFixed(3));
+  const durationSeconds = Math.max(60, Math.round((distanceKm / 20) * 60 * 60));
+  const geometry: RouteGeometry = { type: "LineString", coordinates: [[from.longitude, from.latitude], [to.longitude, to.latitude]] };
+  return {
+    distanceKm,
+    durationSeconds,
+    geometry,
+  };
 }
 
-export async function createDeliveryQuote(supabase: Awaited<ReturnType<typeof import("@/lib/supabase/server").getSupabaseServerClient>>, userId: string, input: z.infer<typeof quoteRequestSchema>): Promise<DeliveryQuote & { geometry: GeoJSON.LineString }> {
+export async function createDeliveryQuote(supabase: Awaited<ReturnType<typeof import("@/lib/supabase/server").getSupabaseServerClient>>, userId: string, input: z.infer<typeof quoteRequestSchema>): Promise<DeliveryQuote & { geometry: RouteGeometry }> {
   const [{ data: restaurant, error: restaurantError }, { data: address, error: addressError }] = await Promise.all([
     supabase.from("restaurants").select("id, latitude, longitude, delivery_fee_base, delivery_fee_per_km, delivery_radius_km, active").eq("id", input.restaurantId).maybeSingle(),
     supabase.from("customer_addresses").select("id, customer_id, latitude, longitude").eq("id", input.addressId).maybeSingle(),
@@ -33,7 +33,7 @@ export async function createDeliveryQuote(supabase: Awaited<ReturnType<typeof im
   if (addressError) throw addressError;
   if (!restaurant?.active) throw new Error("This restaurant is unavailable.");
   if (!address || address.customer_id !== userId) throw new Error("The selected address is unavailable.");
-  const route = await fetchDrivingRoute(restaurant, address);
+  const route = estimateDeliveryRoute(restaurant, address);
   const withinDeliveryRadius = route.distanceKm <= Number(restaurant.delivery_radius_km);
   return {
     restaurantId: input.restaurantId,

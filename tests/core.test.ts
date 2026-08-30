@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calculateDeliveryFee, haversineKm } from "@/lib/geospatial";
+import { estimateDeliveryRoute } from "@/lib/delivery";
 import { normalizeIndianPhone } from "@/lib/utils";
 import { updateCartLine } from "@/store/useCartStore";
 
@@ -17,6 +18,15 @@ describe("restaurant-scoped delivery mathematics", () => {
   });
   it("computes approximate directory distance", () => {
     expect(haversineKm({ latitude: 30.7333, longitude: 76.7794 }, { latitude: 30.7046, longitude: 76.7179 })).toBeGreaterThan(3);
+  });
+});
+
+describe("free delivery-route estimate", () => {
+  it("uses a conservative local distance estimate and direct map line without a routing API", () => {
+    const route = estimateDeliveryRoute({ latitude: 30.7333, longitude: 76.7794 }, { latitude: 30.7046, longitude: 76.7179 });
+    expect(route.distanceKm).toBeGreaterThan(4);
+    expect(route.durationSeconds).toBeGreaterThan(60);
+    expect(route.geometry.coordinates).toEqual([[76.7794, 30.7333], [76.7179, 30.7046]]);
   });
 });
 

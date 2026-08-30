@@ -5,8 +5,6 @@ export const env = {
   supabaseUrl: publicUrl,
   supabaseAnonKey: publicKey,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-  mapboxPublicToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
-  mapboxSecretToken: process.env.MAPBOX_SECRET_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
   credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
   customerContactEncryptionKey: process.env.CUSTOMER_CONTACT_ENCRYPTION_KEY,
 };

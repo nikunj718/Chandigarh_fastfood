@@ -29,6 +29,7 @@ export function RestaurantDirectory() {
   const [creating, setCreating] = useState(false);
   const [addressQuery, setAddressQuery] = useState("");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [searchingStoreAddress, setSearchingStoreAddress] = useState(false);
   const [draft, setDraft] = useState({ name: "", slug: "", ownerName: "", ownerEmail: "", addressText: "", latitude: null as number | null, longitude: null as number | null });
 
   async function load(addressId = selectedAddressId) {
@@ -48,19 +49,22 @@ export function RestaurantDirectory() {
 
   useEffect(() => { void load(); }, []);
   useEffect(() => { if (selectedAddressId) void load(selectedAddressId); }, [selectedAddressId]);
-  useEffect(() => {
-    if (!creating || addressQuery.trim().length < 3 || draft.addressText === addressQuery) { setAddressSuggestions([]); return; }
-    const timer = window.setTimeout(async () => {
-      const response = await fetch(`/api/address-search?q=${encodeURIComponent(addressQuery)}`);
-      if (response.ok) setAddressSuggestions(await response.json());
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [addressQuery, creating, draft.addressText]);
-
   function chooseStoreAddress(suggestion: AddressSuggestion) {
     setAddressQuery(suggestion.addressText);
     setAddressSuggestions([]);
     setDraft((current) => ({ ...current, addressText: suggestion.addressText, latitude: suggestion.latitude, longitude: suggestion.longitude }));
+  }
+
+  async function searchStoreAddress() {
+    if (addressQuery.trim().length < 3) { setAddressSuggestions([]); setError("Enter at least three characters to find a restaurant address."); return; }
+    setSearchingStoreAddress(true); setError(null);
+    try {
+      const response = await fetch(`/api/address-search?q=${encodeURIComponent(addressQuery)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Address search could not be completed.");
+      setAddressSuggestions(payload);
+    } catch (error) { setError(error instanceof Error ? error.message : "Address search could not be completed."); }
+    finally { setSearchingStoreAddress(false); }
   }
 
   async function createRestaurant(event: React.FormEvent) {
@@ -99,7 +103,7 @@ export function RestaurantDirectory() {
       </div>
       {!addresses.length && !loading && <div className="mt-7"><StatusNote>Save a delivery address from a restaurant’s cart to see approximate distances here.</StatusNote></div>}
       {error && <div className="mt-6"><StatusNote tone="error">{error}</StatusNote></div>}
-      {creating && <Card className="mt-8 p-6"><form onSubmit={(event) => void createRestaurant(event)}><h2 className="display-font text-2xl">Start your restaurant</h2><p className="mt-1 text-sm text-stone-600">Publish from any city in India. Search your address and confirm the pin—no latitude or longitude needed.</p><div className="mt-5 grid gap-3 sm:grid-cols-2"><Input required placeholder="Official restaurant name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value, slug: draft.slug || event.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") })} /><Input required placeholder="unique-slug" value={draft.slug} onChange={(event) => setDraft({ ...draft, slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })} /><Input required placeholder="Owner full name" autoComplete="name" value={draft.ownerName} onChange={(event) => setDraft({ ...draft, ownerName: event.target.value })} /><Input required type="email" pattern=".+@gmail\.com" placeholder="Owner Gmail address" autoComplete="email" value={draft.ownerEmail} onChange={(event) => setDraft({ ...draft, ownerEmail: event.target.value.toLowerCase() })} /><div className="relative sm:col-span-2"><Input required placeholder="Search restaurant address or locality in any Indian city" value={addressQuery} onChange={(event) => { setAddressQuery(event.target.value); setDraft((current) => ({ ...current, addressText: "", latitude: null, longitude: null })); }} />{addressSuggestions.length > 0 && <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg">{addressSuggestions.map((suggestion) => <button type="button" className="block w-full border-b border-stone-100 px-4 py-3 text-left text-sm hover:bg-orange-50" key={suggestion.id} onClick={() => chooseStoreAddress(suggestion)}>{suggestion.addressText}</button>)}</div>}</div></div>{draft.latitude !== null && draft.longitude !== null && <div className="mt-5"><p className="text-sm font-bold">Confirm store pin</p><StoreLocationPicker latitude={draft.latitude} longitude={draft.longitude} onChange={({ latitude, longitude }) => setDraft((current) => ({ ...current, latitude, longitude }))} /><p className="mt-2 text-xs text-stone-500">Your selected address is saved; drag the pin only if the exact storefront entrance differs.</p></div>}<Button className="mt-5" type="submit"><Store className="h-4 w-4" />Create and open operations</Button></form></Card>}
+      {creating && <Card className="mt-8 p-6"><form onSubmit={(event) => void createRestaurant(event)}><h2 className="display-font text-2xl">Start your restaurant</h2><p className="mt-1 text-sm text-stone-600">Publish from any city in India. Find your address, then confirm the pin—no latitude or longitude needed.</p><div className="mt-5 grid gap-3 sm:grid-cols-2"><Input required placeholder="Official restaurant name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value, slug: draft.slug || event.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") })} /><Input required placeholder="Restaurant username" aria-label="Restaurant username" value={draft.slug} onChange={(event) => setDraft({ ...draft, slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })} /><Input required placeholder="Owner full name" autoComplete="name" value={draft.ownerName} onChange={(event) => setDraft({ ...draft, ownerName: event.target.value })} /><Input required type="email" pattern=".+@gmail\.com" placeholder="Owner Gmail address" autoComplete="email" value={draft.ownerEmail} onChange={(event) => setDraft({ ...draft, ownerEmail: event.target.value.toLowerCase() })} /><div className="relative sm:col-span-2"><div className="flex gap-2"><Input required placeholder="Enter restaurant address or locality in any Indian city" value={addressQuery} onChange={(event) => { setAddressQuery(event.target.value); setAddressSuggestions([]); setDraft((current) => ({ ...current, addressText: "", latitude: null, longitude: null })); }} /><Button type="button" size="sm" disabled={searchingStoreAddress} onClick={() => void searchStoreAddress()}>{searchingStoreAddress ? "Finding…" : "Find"}</Button></div>{addressSuggestions.length > 0 && <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg">{addressSuggestions.map((suggestion) => <button type="button" className="block w-full border-b border-stone-100 px-4 py-3 text-left text-sm hover:bg-orange-50" key={suggestion.id} onClick={() => chooseStoreAddress(suggestion)}>{suggestion.addressText}</button>)}</div>}</div></div>{draft.latitude !== null && draft.longitude !== null && <div className="mt-5"><p className="text-sm font-bold">Confirm store pin</p><StoreLocationPicker latitude={draft.latitude} longitude={draft.longitude} onChange={({ latitude, longitude }) => setDraft((current) => ({ ...current, latitude, longitude }))} /><p className="mt-2 text-xs text-stone-500">Your selected address is saved; drag the pin only if the exact storefront entrance differs.</p></div>}<Button className="mt-5" type="submit"><Store className="h-4 w-4" />Create and open operations</Button></form></Card>}
       <div className="mt-9 grid gap-5 md:grid-cols-2 lg:grid-cols-3">{loading ? Array.from({ length: 3 }, (_, index) => <div key={index} className="h-64 animate-pulse rounded-3xl bg-orange-100" />) : restaurants.map((restaurant) => <Link href={`/restaurants/${restaurant.slug}`} key={restaurant.id} className="group"><Card className="h-full overflow-hidden p-0 transition duration-200 group-hover:-translate-y-1 group-hover:shadow-2xl"><div className="flex h-32 items-end bg-gradient-to-br from-orange-300 via-amber-100 to-moss p-5"><span className="rounded-full bg-white/85 px-3 py-1 text-xs font-bold text-ink">{restaurant.approximateDistanceKm ? `≈ ${restaurant.approximateDistanceKm} km away` : "Delivery available"}</span></div><div className="p-6"><h2 className="display-font text-2xl">{restaurant.name}</h2><p className="mt-2 line-clamp-2 min-h-10 text-sm text-stone-600">{restaurant.description || restaurant.address_text || "A local kitchen waiting to be discovered."}</p>{restaurant.owner_name && <p className="mt-3 text-sm text-stone-500">Owned by {restaurant.owner_name}</p>}<div className="mt-5 flex items-center justify-between text-sm"><span className="flex items-center gap-1 text-moss"><MapPin className="h-4 w-4" />{restaurant.delivery_radius_km} km radius</span><span className="font-semibold">from {formatINR(restaurant.delivery_fee_base)}</span></div></div></Card></Link>)}</div>
       {!loading && restaurants.length === 0 && <div className="mt-12 rounded-3xl border border-dashed border-orange-200 bg-white/60 p-12 text-center"><Compass className="mx-auto h-8 w-8 text-saffron" /><h2 className="display-font mt-4 text-2xl">No restaurants are live yet.</h2><p className="mt-2 text-stone-600">Be the first to open one for your neighbourhood.</p></div>}
     </section>

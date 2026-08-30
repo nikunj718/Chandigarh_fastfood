@@ -1,6 +1,6 @@
 # Fastfood Delivery
 
-Multi-restaurant food ordering for India, built with Next.js App Router, Supabase anonymous guest sessions, email/password staff access, Mapbox, Razorpay, Zustand, Framer Motion, and an active-shift rider PWA.
+Multi-restaurant food ordering for India, built with Next.js App Router, Supabase anonymous guest sessions, email/password staff access, Leaflet, OpenStreetMap, Razorpay, Zustand, Framer Motion, and an active-shift rider PWA.
 
 ## Run locally
 
@@ -21,8 +21,6 @@ npm run dev
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser and user-scoped server access |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only checkout, payment webhook, and team invitation writes |
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | Browser maps and owner pin picker |
-| `MAPBOX_SECRET_TOKEN` | Server-only address search and Directions quotes/ETAs |
 | `CREDENTIAL_ENCRYPTION_KEY` | Base64-encoded 32-byte server-only key that encrypts each restaurant's Razorpay API and webhook secrets |
 | `CUSTOMER_CONTACT_ENCRYPTION_KEY` | Separate base64-encoded 32-byte server-only key that encrypts guest delivery contacts and order snapshots |
 
@@ -51,7 +49,9 @@ For each restaurant Razorpay account, configure `payment.captured` and `payment.
 
 ## Delivery and tracking
 
-The cart quote uses Mapbox driving distance and rejects routes beyond the restaurant's configured `delivery_radius_km`. The fee is `delivery_fee_base + delivery_fee_per_km × route_km`.
+The cart quote uses a local, conservative distance estimate based on the saved coordinates and rejects deliveries beyond the restaurant's configured `delivery_radius_km`. The fee is `delivery_fee_base + delivery_fee_per_km × route_km`. No map, geocoding, routing, or tile API key is required.
+
+Restaurant pins and tracking maps use Leaflet with OpenStreetMap tiles. Address search makes a single, user-triggered request to the public OpenStreetMap Nominatim service without credentials; requests are cached and locally rate-limited. For a large production deployment, follow Nominatim's usage policy or self-host it rather than increasing public-service traffic.
 
 Riders share GPS every 30 seconds only during an active, foreground, permissioned PWA shift. Mobile browsers can suspend timers/location when backgrounded, so truly guaranteed background tracking requires a native app or a dedicated tracking service.
 
@@ -62,4 +62,4 @@ npm test
 npm run build
 ```
 
-The included tests cover Indian delivery-phone normalization, encrypted contacts and tenant credentials, delivery math, approximate directory distance, and isolated cart-line behavior. Live Supabase, Mapbox, Razorpay, RLS, email-confirmation, and webhook tests require configured project credentials.
+The included tests cover Indian delivery-phone normalization, encrypted contacts and tenant credentials, local delivery-distance estimation, approximate directory distance, and isolated cart-line behavior. Live Supabase, Razorpay, RLS, email-confirmation, and webhook tests require configured project credentials.
