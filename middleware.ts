@@ -1,6 +1,8 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { env, hasSupabaseConfig } from "@/lib/env";
+import { isVerifiedUser } from "@/lib/identity";
+import { safeNextPath } from "@/lib/auth-redirect";
 
 type SupabaseCookie = { name: string; value: string; options: CookieOptions };
 
@@ -18,8 +20,12 @@ export async function middleware(request: NextRequest) {
     },
   });
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.redirect(new URL("/", request.url));
+  if (!user || !isVerifiedUser(user)) {
+    const loginUrl = new URL("/", request.url);
+    loginUrl.searchParams.set("next", safeNextPath(`${request.nextUrl.pathname}${request.nextUrl.search}`));
+    return NextResponse.redirect(loginUrl);
+  }
   return response;
 }
 
-export const config = { matcher: ["/restaurants/:path*", "/admin/:path*", "/rider/:path*", "/tracking/:path*"] };
+export const config = { matcher: ["/admin/:path*", "/rider/:path*", "/tracking/:path*"] };

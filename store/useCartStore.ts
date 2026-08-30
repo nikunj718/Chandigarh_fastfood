@@ -12,6 +12,7 @@ type CartState = {
   addItem: (restaurantId: string, itemId: string) => void;
   setQuantity: (restaurantId: string, itemId: string, quantity: number) => void;
   clearCart: (restaurantId: string) => void;
+  clearAllCarts: () => void;
   setOpen: (open: boolean) => void;
 };
 
@@ -55,6 +56,7 @@ export const useCartStore = create<CartState>()(
         set((state) => ({
           cartsByRestaurant: { ...state.cartsByRestaurant, [restaurantId]: { restaurantId, lines: [], updatedAt: new Date().toISOString() } },
         })),
+      clearAllCarts: () => set({ cartsByRestaurant: {}, activeRestaurantId: null, open: false }),
       setOpen: (open) => set({ open }),
     }),
     { name: "chandigarh-fastfood-carts", version: 1 },

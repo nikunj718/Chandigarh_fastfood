@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError, requireUser } from "@/lib/auth";
 import { haversineKm } from "@/lib/geospatial";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 
 const restaurantSchema = z.object({
   name: z.string().trim().min(2).max(100),
   slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   ownerName: z.string().trim().min(2).max(120),
-  ownerEmail: z.string().trim().toLowerCase().email().max(320).refine((value) => value.endsWith("@gmail.com"), "Use a Gmail address for the owner email."),
   description: z.string().trim().max(500).optional().nullable(),
   phone: z.string().trim().max(20).optional().nullable(),
   addressText: z.string().trim().min(3).max(300),
@@ -28,16 +28,17 @@ function numericRestaurant(row: Record<string, unknown>) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { supabase, user } = await requireUser();
     const slug = request.nextUrl.searchParams.get("slug");
     const addressId = request.nextUrl.searchParams.get("addressId");
-    let query = supabase.from("restaurants").select("id,name,slug,owner_name,description,phone,address_text,latitude,longitude,delivery_fee_base,delivery_fee_per_km,delivery_radius_km,active").eq("active", true).order("name");
+    const admin = getSupabaseAdminClient();
+    let query = admin.from("restaurants").select("id,name,slug,owner_name,description,phone,address_text,latitude,longitude,delivery_fee_base,delivery_fee_per_km,delivery_radius_km,active").eq("active", true).order("name");
     if (slug) query = query.eq("slug", slug);
     const { data: restaurants, error } = await query;
     if (error) throw error;
 
     let address: { latitude: number; longitude: number } | null = null;
     if (addressId) {
+      const { supabase, user } = await requireUser();
       const { data, error: addressError } = await supabase.from("customer_addresses").select("latitude,longitude").eq("id", addressId).eq("customer_id", user.id).maybeSingle();
       if (addressError) throw addressError;
       address = data ? { latitude: Number(data.latitude), longitude: Number(data.longitude) } : null;
@@ -56,16 +57,14 @@ export async function POST(request: NextRequest) {
   try {
     const body = restaurantSchema.parse(await request.json());
     const { supabase, user } = await requireUser();
-    const signedInEmail = user.email?.toLowerCase() ?? null;
-    if (signedInEmail !== body.ownerEmail) {
-      return NextResponse.json({ error: "Link this Gmail address to your account before creating the restaurant." }, { status: 409 });
-    }
+    const ownerEmail = user.email?.trim().toLowerCase();
+    if (!ownerEmail) throw new Error("EMAIL_CONFIRMATION_REQUIRED");
     const { data, error } = await supabase.from("restaurants").insert({
       created_by: user.id,
       name: body.name,
       slug: body.slug,
       owner_name: body.ownerName,
-      owner_email: body.ownerEmail,
+      owner_email: ownerEmail,
       description: body.description ?? null,
       phone: body.phone ?? null,
       address_text: body.addressText,
@@ -85,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
     const { error: profileError } = await supabase.from("profiles").update({ display_name: body.ownerName }).eq("id", user.id);
     if (profileError) throw profileError;
-    return NextResponse.json({ ...data, membershipRole: membership.role, ownerEmailNeedsConfirmation: !user.email_confirmed_at }, { status: 201 });
+    return NextResponse.json({ ...data, membershipRole: membership.role }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Check your restaurant details and try again." }, { status: 400 });
     return apiError(error, "The restaurant could not be created.");

@@ -7,21 +7,18 @@ import { normalizeIndianPhone } from "@/lib/utils";
 
 const contactSchema = z.object({ deliveryPhone: z.string().trim().min(1).max(30) });
 
-function guestStatus(user: { is_anonymous?: boolean }) {
-  return Boolean(user.is_anonymous);
-}
-
 export async function GET() {
   try {
     const { supabase, user } = await requireUser();
     const { data, error } = await supabase
       .from("profiles")
-      .select("default_delivery_phone_ciphertext")
+      .select("email,display_name,default_delivery_phone_ciphertext")
       .eq("id", user.id)
       .single();
     if (error) throw error;
     return NextResponse.json({
-      isGuest: guestStatus(user),
+      email: data?.email ?? user.email,
+      displayName: data?.display_name ?? null,
       defaultDeliveryPhone: data?.default_delivery_phone_ciphertext ? decryptCustomerContact(data.default_delivery_phone_ciphertext) : null,
     });
   } catch (error) {
