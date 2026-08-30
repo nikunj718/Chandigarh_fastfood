@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusNote } from "@/components/ui/status-note";
+import { signInUrl } from "@/lib/auth-redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCartStore } from "@/store/useCartStore";
 
@@ -69,6 +70,6 @@ export function AccountIndicator({ nextPath, onAccountChange }: { nextPath: stri
   }
 
   if (!loaded) return <span className="h-9 w-20 animate-pulse rounded-full bg-orange-100" />;
-  if (!profile) return <Link href={`/?next=${encodeURIComponent(nextPath)}`} className="rounded-full bg-ink px-4 py-2 text-sm font-bold text-white hover:bg-[#442a1d]">Sign in</Link>;
+  if (!profile) return <Link href={signInUrl(nextPath)} className="rounded-full bg-ink px-4 py-2 text-sm font-bold text-white hover:bg-[#442a1d]">Sign in</Link>;
   return <div className="relative"><button className="inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-2 text-sm font-bold text-ink hover:bg-orange-200" onClick={() => setOpen((value) => !value)}><UserRound className="h-4 w-4" />Account</button>{open && <div className="absolute right-0 top-12 z-50 w-72 rounded-2xl border border-orange-100 bg-white p-4 shadow-xl"><p className="font-bold">{profile.displayName || "Your account"}</p><p className="mt-1 break-all text-xs text-stone-600">{profile.email}</p><p className="mt-3 text-xs leading-5 text-stone-600">Your delivery phone is used only as an order contact for the restaurant and assigned rider.</p><label className="mt-4 block text-sm font-semibold">Delivery phone<Input className="mt-2" inputMode="tel" autoComplete="tel" placeholder="98765 43210" value={phone.replace(/^\+91/, "")} onChange={(event) => setPhone(event.target.value)} disabled={saving} /></label>{message && <div className="mt-3"><StatusNote tone="error">{message}</StatusNote></div>}<Button className="mt-4 w-full" size="sm" onClick={() => void save()} disabled={saving}>{saving && <LoaderCircle className="h-4 w-4 animate-spin" />}Save delivery contact</Button><Button className="mt-2 w-full" size="sm" variant="ghost" onClick={() => void signOut()} disabled={saving}><LogOut className="h-4 w-4" />Sign out</Button></div>}</div>;
 }

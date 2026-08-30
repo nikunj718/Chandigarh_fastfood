@@ -6,14 +6,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusNote } from "@/components/ui/status-note";
-import { authCallbackUrl, safeReturnPath } from "@/lib/auth-redirect";
+import { authCallbackUrl, cleanReturnPath } from "@/lib/auth-redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Mode = "sign-in" | "sign-up";
 
 export function AuthAccessForm({ nextPath }: { nextPath?: string | null }) {
   const router = useRouter();
-  const next = safeReturnPath(nextPath);
+  const next = cleanReturnPath(nextPath);
   const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

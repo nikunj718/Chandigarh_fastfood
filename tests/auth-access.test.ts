@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authCallbackUrl, safeNextPath, safeReturnPath } from "@/lib/auth-redirect";
+import { authCallbackUrl, cleanReturnPath, returnPathFromRequest, safeNextPath, safeReturnPath, signInUrl } from "@/lib/auth-redirect";
 import { isVerifiedUser } from "@/lib/identity";
 import { managementDestination } from "@/lib/session-routing";
 
@@ -11,6 +11,16 @@ describe("authentication redirect safety", () => {
     expect(authCallbackUrl("https://app.example", "/restaurants/demo")).toBe("https://app.example/auth/callback?next=%2Frestaurants%2Fdemo");
     expect(safeReturnPath("https://attacker.example")).toBeNull();
     expect(authCallbackUrl("https://app.example")).toBe("https://app.example/auth/callback");
+  });
+
+  it("preserves an existing root destination without nesting next parameters", () => {
+    expect(cleanReturnPath("/admin?next=%2Ftracking%2Forder-1")).toBe("/tracking/order-1");
+    expect(cleanReturnPath("/admin?next=%2Frider%3Fnext%3D%252Frestaurants")).toBe("/restaurants");
+    expect(cleanReturnPath("/admin?next=%2F%2Fattacker.example")).toBeNull();
+    expect(returnPathFromRequest("/admin", "?next=%2Ftracking%2Forder-1")).toBe("/tracking/order-1");
+    expect(returnPathFromRequest("/admin", "")).toBe("/admin");
+    expect(returnPathFromRequest("/admin", "?next=https%3A%2F%2Fattacker.example")).toBeNull();
+    expect(signInUrl("/admin?next=%2Ftracking%2Forder-1")).toBe("/?next=%2Ftracking%2Forder-1");
   });
 });
 

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isVerifiedUser } from "@/lib/identity";
-import { safeReturnPath } from "@/lib/auth-redirect";
+import { cleanReturnPath } from "@/lib/auth-redirect";
 import { getAuthenticatedLandingForUser } from "@/lib/session-routing";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
-  const next = safeReturnPath(request.nextUrl.searchParams.get("next"));
+  const next = cleanReturnPath(request.nextUrl.searchParams.get("next"));
   const error = request.nextUrl.searchParams.get("error_description") ?? request.nextUrl.searchParams.get("error");
   if (error) return NextResponse.redirect(new URL(`/?authError=${encodeURIComponent(error)}`, request.url));
 
