@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Compass, LoaderCircle, MapPin, Plus, Store, UtensilsCrossed } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GuestProfileIndicator } from "@/components/auth/guest-profile-indicator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -34,6 +34,8 @@ export function RestaurantDirectory() {
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [searchingStoreAddress, setSearchingStoreAddress] = useState(false);
   const [draft, setDraft] = useState({ name: "", slug: "", ownerName: "", ownerEmail: "", addressText: "", latitude: null as number | null, longitude: null as number | null });
+  const submissionInFlight = useRef(false);
+  const emailLinkAttempt = useRef<string | null>(null);
 
   async function load(addressId = selectedAddressId) {
     setLoading(true);
@@ -72,22 +74,36 @@ export function RestaurantDirectory() {
 
   async function createRestaurant(event: React.FormEvent) {
     event.preventDefault();
+    if (submissionInFlight.current) return;
     setError(null);
     if (!draft.addressText || draft.latitude === null || draft.longitude === null) {
       setError("Choose your restaurant address from the search results, then confirm the map pin.");
       return;
     }
+    submissionInFlight.current = true;
     setSubmitting(true);
     try {
       const supabase = getSupabaseBrowserClient();
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError || !authData.user) throw new Error("Your guest session is unavailable. Refresh and try again.");
-      if (authData.user.is_anonymous) {
+      const linkedEmail = authData.user.email?.trim().toLowerCase();
+      const requestedEmail = draft.ownerEmail.trim().toLowerCase();
+      if (linkedEmail !== requestedEmail) {
+        if (!authData.user.is_anonymous) {
+          throw new Error("Use the Gmail address linked to your signed-in staff account.");
+        }
+        if (emailLinkAttempt.current === requestedEmail) {
+          throw new Error("An email confirmation request is already pending. Check your Gmail before trying again.");
+        }
+        emailLinkAttempt.current = requestedEmail;
         const { error: linkError } = await supabase.auth.updateUser(
           { email: draft.ownerEmail, data: { full_name: draft.ownerName } },
           { emailRedirectTo: `${window.location.origin}/staff?confirmation=1` },
         );
-        if (linkError) throw new Error(`We could not link that Gmail address: ${linkError.message}`);
+        if (linkError) {
+          if (!/rate limit|too many requests|429/i.test(linkError.message)) emailLinkAttempt.current = null;
+          throw new Error(`We could not link that Gmail address: ${linkError.message}`);
+        }
       }
       const response = await fetch("/api/restaurants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) });
       const payload = await response.json();
@@ -97,6 +113,7 @@ export function RestaurantDirectory() {
     } catch (creationError) {
       setError(creationError instanceof Error ? creationError.message : "Restaurant could not be created.");
     } finally {
+      submissionInFlight.current = false;
       setSubmitting(false);
     }
   }
