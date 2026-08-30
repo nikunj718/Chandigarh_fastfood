@@ -71,34 +71,78 @@ function safeOrderForAdmin(order: Record<string, unknown>) {
   };
 }
 
+class OperationsDataError extends Error {
+  constructor(readonly stage: string, readonly databaseError: unknown) {
+    super(`Operations data query failed: ${stage}`);
+    this.name = "OperationsDataError";
+  }
+}
+
+function requireQuerySuccess(stage: string, error: unknown) {
+  if (error) throw new OperationsDataError(stage, error);
+}
+
+function logOperationsLoadFailure(restaurantId: string | null, error: unknown) {
+  if (error instanceof OperationsDataError) {
+    const databaseError = error.databaseError as { code?: string; message?: string; details?: string; hint?: string } | null;
+    console.error("Admin restaurant operations database query failed", {
+      restaurantId,
+      stage: error.stage,
+      code: databaseError?.code,
+      message: databaseError?.message,
+      details: databaseError?.details,
+      hint: databaseError?.hint,
+    });
+    return;
+  }
+  console.error("Admin restaurant operations request failed", { restaurantId, error });
+}
+
 export async function GET(_request: NextRequest, context: { params: Promise<{ restaurantId: string }> }) {
+  let restaurantId: string | null = null;
   try {
-    const { restaurantId } = await context.params;
+    ({ restaurantId } = await context.params);
     const { supabase, user, membership } = await requireRestaurantManager(restaurantId);
     const [restaurant, categories, orders, members, hours, profile] = await Promise.all([
-      supabase.from("restaurants").select(restaurantColumns).eq("id", restaurantId).single(),
+      supabase.from("restaurants").select(restaurantColumns).eq("id", restaurantId).maybeSingle(),
       supabase.from("menu_categories").select("*,menu_items(*)").eq("restaurant_id", restaurantId).order("sort_order"),
       supabase.from("orders").select("id,status,payment_method,payment_status,total,created_at,delivery_phone_ciphertext,delivery_phone_last4,delivery_assignments(rider_id)").eq("restaurant_id", restaurantId).order("created_at", { ascending: false }).limit(30),
-      supabase.from("restaurant_memberships").select("user_id,role,profiles(display_name,email)").eq("restaurant_id", restaurantId),
+      supabase.from("restaurant_memberships").select("user_id,role").eq("restaurant_id", restaurantId),
       supabase.from("restaurant_operating_hours").select("day_of_week,is_closed,opens_at,closes_at").eq("restaurant_id", restaurantId).order("day_of_week"),
       supabase.from("profiles").select("email_verified").eq("id", user.id).maybeSingle(),
     ]);
-    if (restaurant.error) throw restaurant.error;
-    if (categories.error) throw categories.error;
-    if (orders.error) throw orders.error;
-    if (members.error) throw members.error;
-    if (hours.error) throw hours.error;
-    if (profile.error) throw profile.error;
+    requireQuerySuccess("restaurant", restaurant.error);
+    requireQuerySuccess("menu categories", categories.error);
+    requireQuerySuccess("orders", orders.error);
+    requireQuerySuccess("restaurant memberships", members.error);
+    requireQuerySuccess("operating hours", hours.error);
+    requireQuerySuccess("owner profile", profile.error);
+    if (!restaurant.data) throw new Error("NOT_FOUND");
+
+    const memberIds = (members.data ?? []).map((member) => member.user_id);
+    const memberProfiles = memberIds.length
+      ? await supabase.from("profiles").select("id,display_name,email").in("id", memberIds)
+      : { data: [], error: null };
+    requireQuerySuccess("member profiles", memberProfiles.error);
+    const profilesById = new Map((memberProfiles.data ?? []).map((memberProfile) => [memberProfile.id, memberProfile]));
+    const teamMembers = (members.data ?? []).map((member) => ({
+      ...member,
+      profiles: profilesById.get(member.user_id) ?? null,
+    }));
+
     return NextResponse.json({
       restaurant: safeRestaurantForAdmin(restaurant.data as Record<string, unknown>),
-      categories: categories.data,
+      categories: categories.data ?? [],
       orders: (orders.data ?? []).map((order) => safeOrderForAdmin(order as Record<string, unknown>)),
-      members: members.data,
+      members: teamMembers,
       membershipRole: membership.role,
       operatingHours: normalizeOperatingHours(hours.data),
       ownerAccountNeedsSecurity: membership.role === "owner" && !profile.data?.email_verified,
     });
-  } catch (error) { return apiError(error, "Restaurant operations could not be loaded."); }
+  } catch (error) {
+    logOperationsLoadFailure(restaurantId, error);
+    return apiError(error, "Restaurant operations could not be loaded.");
+  }
 }
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ restaurantId: string }> }) {
