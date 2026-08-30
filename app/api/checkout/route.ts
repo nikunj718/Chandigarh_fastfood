@@ -5,6 +5,7 @@ import { createDeliveryQuote } from "@/lib/delivery";
 import { CredentialConfigurationError, decryptRazorpayCredentials, type RazorpayCredentials } from "@/lib/restaurant-credentials";
 import { CustomerContactError, encryptCustomerContact, lastFourDigits } from "@/lib/customer-contact";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { isRestaurantOpenNow, normalizeOperatingHours } from "@/lib/operating-hours";
 import { normalizeIndianPhone } from "@/lib/utils";
 
 const checkoutSchema = z.object({
@@ -90,12 +91,17 @@ export async function POST(request: NextRequest) {
     if (!quote.withinDeliveryRadius) return NextResponse.json({ error: "This address is outside the restaurant's delivery radius." }, { status: 422 });
 
     const admin = getSupabaseAdminClient();
-    const [{ data: restaurant, error: restaurantError }, { data: address, error: addressError }] = await Promise.all([
-      admin.from("restaurants").select("id,name,slug,address_text,latitude,longitude,razorpay_key_id,razorpay_key_secret,razorpay_webhook_secret").eq("id", input.restaurantId).single(),
+    const [{ data: restaurant, error: restaurantError }, { data: address, error: addressError }, { data: hours, error: hoursError }] = await Promise.all([
+      admin.from("restaurants").select("id,name,slug,address_text,latitude,longitude,active,razorpay_key_id,razorpay_key_secret,razorpay_webhook_secret").eq("id", input.restaurantId).single(),
       admin.from("customer_addresses").select("id,address_text,latitude,longitude,label").eq("id", input.addressId).eq("customer_id", user.id).single(),
+      admin.from("restaurant_operating_hours").select("day_of_week,is_closed,opens_at,closes_at").eq("restaurant_id", input.restaurantId).order("day_of_week"),
     ]);
     if (restaurantError) throw restaurantError;
     if (addressError) throw addressError;
+    if (hoursError) throw hoursError;
+    if (!restaurant.active || !isRestaurantOpenNow(normalizeOperatingHours(hours))) {
+      return NextResponse.json({ error: "This restaurant is currently closed." }, { status: 409 });
+    }
     const credentials = input.paymentMethod === "razorpay" ? decryptRazorpayCredentials(restaurant) : null;
     const total = Number((subtotal + quote.fee).toFixed(2));
     const { razorpay_key_id, razorpay_key_secret, razorpay_webhook_secret, ...restaurantSnapshot } = restaurant;

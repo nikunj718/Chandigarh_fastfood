@@ -26,6 +26,13 @@ export type MenuItem = {
   active: boolean;
 };
 
+export type OperatingHour = {
+  dayOfWeek: number;
+  isClosed: boolean;
+  opensAt: string | null;
+  closesAt: string | null;
+};
+
 export type MenuCategory = {
   id: string;
   restaurant_id: string;

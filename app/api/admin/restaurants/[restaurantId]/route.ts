@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError, requireRestaurantManager } from "@/lib/auth";
 import { encryptCredential, hasCompleteRazorpayCredentials, maskRazorpayKeyId } from "@/lib/restaurant-credentials";
 import { decryptCustomerContact } from "@/lib/customer-contact";
+import { normalizeOperatingHours, operatingHoursSchema } from "@/lib/operating-hours";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 
 const credentialFields = ["razorpayKeyId", "razorpayKeySecret", "razorpayWebhookSecret"] as const;
@@ -24,6 +25,7 @@ const settingsSchema = z.object({
   deliveryFeePerKm: z.number().min(0).max(9999).optional(),
   deliveryRadiusKm: z.number().min(0.1).max(100).optional(),
   active: z.boolean().optional(),
+  operatingHours: operatingHoursSchema.optional(),
 }).merge(credentialSchema).superRefine((value, context) => {
   const supplied = credentialFields.filter((field) => Boolean(value[field]));
   if (value.clearRazorpayCredentials && supplied.length) {
@@ -72,18 +74,30 @@ function safeOrderForAdmin(order: Record<string, unknown>) {
 export async function GET(_request: NextRequest, context: { params: Promise<{ restaurantId: string }> }) {
   try {
     const { restaurantId } = await context.params;
-    const { supabase, membership } = await requireRestaurantManager(restaurantId);
-    const [restaurant, categories, orders, members] = await Promise.all([
+    const { supabase, user, membership } = await requireRestaurantManager(restaurantId);
+    const [restaurant, categories, orders, members, hours, profile] = await Promise.all([
       supabase.from("restaurants").select(restaurantColumns).eq("id", restaurantId).single(),
       supabase.from("menu_categories").select("*,menu_items(*)").eq("restaurant_id", restaurantId).order("sort_order"),
       supabase.from("orders").select("id,status,payment_method,payment_status,total,created_at,delivery_phone_ciphertext,delivery_phone_last4,delivery_assignments(rider_id)").eq("restaurant_id", restaurantId).order("created_at", { ascending: false }).limit(30),
       supabase.from("restaurant_memberships").select("user_id,role,profiles(display_name,email)").eq("restaurant_id", restaurantId),
+      supabase.from("restaurant_operating_hours").select("day_of_week,is_closed,opens_at,closes_at").eq("restaurant_id", restaurantId).order("day_of_week"),
+      supabase.from("profiles").select("email_verified").eq("id", user.id).maybeSingle(),
     ]);
     if (restaurant.error) throw restaurant.error;
     if (categories.error) throw categories.error;
     if (orders.error) throw orders.error;
     if (members.error) throw members.error;
-    return NextResponse.json({ restaurant: safeRestaurantForAdmin(restaurant.data as Record<string, unknown>), categories: categories.data, orders: (orders.data ?? []).map((order) => safeOrderForAdmin(order as Record<string, unknown>)), members: members.data, membershipRole: membership.role });
+    if (hours.error) throw hours.error;
+    if (profile.error) throw profile.error;
+    return NextResponse.json({
+      restaurant: safeRestaurantForAdmin(restaurant.data as Record<string, unknown>),
+      categories: categories.data,
+      orders: (orders.data ?? []).map((order) => safeOrderForAdmin(order as Record<string, unknown>)),
+      members: members.data,
+      membershipRole: membership.role,
+      operatingHours: normalizeOperatingHours(hours.data),
+      ownerAccountNeedsSecurity: membership.role === "owner" && !profile.data?.email_verified,
+    });
   } catch (error) { return apiError(error, "Restaurant operations could not be loaded."); }
 }
 
@@ -108,9 +122,28 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ res
       ...credentialPayload(body),
     };
     const admin = getSupabaseAdminClient();
-    const { data, error } = await admin.from("restaurants").update(payload).eq("id", restaurantId).select(restaurantColumns).single();
+    const restaurantQuery = Object.keys(payload).length
+      ? admin.from("restaurants").update(payload).eq("id", restaurantId).select(restaurantColumns).single()
+      : admin.from("restaurants").select(restaurantColumns).eq("id", restaurantId).single();
+    const { data, error } = await restaurantQuery;
     if (error) throw error;
-    return NextResponse.json(safeRestaurantForAdmin(data as Record<string, unknown>));
+    if (body.operatingHours) {
+      const { error: hoursError } = await admin.from("restaurant_operating_hours").upsert(
+        body.operatingHours.map((hour) => ({
+          restaurant_id: restaurantId,
+          day_of_week: hour.dayOfWeek,
+          is_closed: hour.isClosed,
+          opens_at: hour.isClosed ? null : hour.opensAt,
+          closes_at: hour.isClosed ? null : hour.closesAt,
+          updated_at: new Date().toISOString(),
+        })),
+        { onConflict: "restaurant_id,day_of_week" },
+      );
+      if (hoursError) throw hoursError;
+    }
+    const { data: hours, error: hoursError } = await admin.from("restaurant_operating_hours").select("day_of_week,is_closed,opens_at,closes_at").eq("restaurant_id", restaurantId).order("day_of_week");
+    if (hoursError) throw hoursError;
+    return NextResponse.json({ restaurant: safeRestaurantForAdmin(data as Record<string, unknown>), operatingHours: normalizeOperatingHours(hours) });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message ?? "Check the restaurant settings and try again." }, { status: 400 });
     return apiError(error, "Restaurant settings could not be saved.");

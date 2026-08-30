@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
     const body = restaurantSchema.parse(await request.json());
     const { supabase, user } = await requireUser();
     const signedInEmail = user.email?.toLowerCase() ?? null;
-    if (signedInEmail && signedInEmail !== body.ownerEmail) {
-      return NextResponse.json({ error: "Use the Gmail address linked to your signed-in staff account." }, { status: 409 });
+    if (signedInEmail !== body.ownerEmail) {
+      return NextResponse.json({ error: "Link this Gmail address to your account before creating the restaurant." }, { status: 409 });
     }
     const { data, error } = await supabase.from("restaurants").insert({
       created_by: user.id,
@@ -73,9 +73,19 @@ export async function POST(request: NextRequest) {
       longitude: body.longitude,
     }).select("id,name,slug,owner_name,owner_email").single();
     if (error) throw error;
+    const { data: membership, error: membershipError } = await supabase
+      .from("restaurant_memberships")
+      .select("role")
+      .eq("restaurant_id", data.id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (membershipError) throw membershipError;
+    if (!membership || membership.role !== "owner") {
+      throw new Error("The restaurant owner membership could not be verified.");
+    }
     const { error: profileError } = await supabase.from("profiles").update({ display_name: body.ownerName }).eq("id", user.id);
     if (profileError) throw profileError;
-    return NextResponse.json({ ...data, ownerEmailNeedsConfirmation: Boolean(user.is_anonymous) }, { status: 201 });
+    return NextResponse.json({ ...data, membershipRole: membership.role, ownerEmailNeedsConfirmation: !user.email_confirmed_at }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Check your restaurant details and try again." }, { status: 400 });
     return apiError(error, "The restaurant could not be created.");
