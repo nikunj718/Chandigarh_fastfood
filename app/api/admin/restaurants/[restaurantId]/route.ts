@@ -34,7 +34,7 @@ const settingsSchema = z.object({
   }
 });
 
-const restaurantColumns = "id,created_by,name,slug,description,phone,address_text,latitude,longitude,delivery_fee_base,delivery_fee_per_km,delivery_radius_km,active,created_at,updated_at,razorpay_key_id,razorpay_key_secret,razorpay_webhook_secret";
+const restaurantColumns = "id,created_by,name,slug,owner_name,owner_email,description,phone,address_text,latitude,longitude,delivery_fee_base,delivery_fee_per_km,delivery_radius_km,active,created_at,updated_at,razorpay_key_id,razorpay_key_secret,razorpay_webhook_secret";
 
 function safeRestaurantForAdmin(restaurant: Record<string, unknown>) {
   const { razorpay_key_id, razorpay_key_secret, razorpay_webhook_secret, ...safeRestaurant } = restaurant;

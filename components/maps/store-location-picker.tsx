@@ -22,6 +22,6 @@ export function StoreLocationPicker({ latitude, longitude, onChange }: { latitud
     return () => { marker.current?.off("dragend", emitMarkerPosition); map.current?.off("click", moveMarkerToClick); map.current?.remove(); map.current = null; marker.current = null; };
   }, []);
   useEffect(() => { if (map.current && marker.current) { marker.current.setLngLat([longitude, latitude]); map.current.flyTo({ center: [longitude, latitude], duration: 350 }); } }, [latitude, longitude]);
-  if (!env.mapboxPublicToken) return <StatusNote>Add <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> to enable the interactive store pin. Coordinates can still be entered below.</StatusNote>;
+  if (!env.mapboxPublicToken) return <StatusNote>Add <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> to confirm the interactive store pin. Address search still sets the store location.</StatusNote>;
   return <div><div ref={container} className="mt-2 h-56 overflow-hidden rounded-2xl border border-orange-100" /><p className="mt-2 flex items-center gap-1 text-xs text-stone-500"><MapPin className="h-3 w-3" />Click or drag the pin to set the pickup location.</p></div>;
 }

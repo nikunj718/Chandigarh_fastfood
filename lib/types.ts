@@ -2,6 +2,7 @@ export type Restaurant = {
   id: string;
   name: string;
   slug: string;
+  owner_name: string | null;
   description: string | null;
   phone: string | null;
   address_text: string | null;

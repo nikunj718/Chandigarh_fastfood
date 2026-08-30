@@ -65,9 +65,9 @@ export function WelcomeExperience() {
       <AnimatePresence mode="wait">
         {!leaving && <motion.div key="guest-entry" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.35, ease: "easeOut" }} className="relative w-full max-w-md">
           <Card className="p-7 sm:p-9">
-            <div className="mb-8 flex items-center gap-3"><div className="grid h-11 w-11 place-items-center rounded-2xl bg-saffron text-white"><Sparkles className="h-5 w-5" /></div><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-saffron">Freshly made</p><p className="font-semibold text-ink">Chandigarh Fastfood</p></div></div>
+            <div className="mb-8 flex items-center gap-3"><div className="grid h-11 w-11 place-items-center rounded-2xl bg-saffron text-white"><Sparkles className="h-5 w-5" /></div><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-saffron">Freshly made</p><p className="font-semibold text-ink">Fastfood Delivery</p></div></div>
             <p className="text-sm font-semibold text-moss">A better way to order local.</p>
-            <h1 className="display-font mt-2 text-4xl leading-tight text-ink sm:text-5xl">Welcome to Chandigarh Fastfood.</h1>
+            <h1 className="display-font mt-2 text-4xl leading-tight text-ink sm:text-5xl">Welcome to Fastfood Delivery.</h1>
             <p className="mt-4 leading-6 text-stone-600">Preparing a private guest session so you can browse kitchens and build an order immediately.</p>
             {message && <div className="mt-5"><StatusNote tone="error">{message}</StatusNote></div>}
             <Button className="mt-7 w-full" size="lg" onClick={() => void beginGuestSession()} disabled={busy}>{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}{busy ? "Starting guest session…" : "Continue as guest"}</Button>

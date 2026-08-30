@@ -6,6 +6,8 @@ import { haversineKm } from "@/lib/geospatial";
 const restaurantSchema = z.object({
   name: z.string().trim().min(2).max(100),
   slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  ownerName: z.string().trim().min(2).max(120),
+  ownerEmail: z.string().trim().toLowerCase().email().max(320).refine((value) => value.endsWith("@gmail.com"), "Use a Gmail address for the owner email."),
   description: z.string().trim().max(500).optional().nullable(),
   phone: z.string().trim().max(20).optional().nullable(),
   addressText: z.string().trim().min(3).max(300),
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest) {
     const { supabase, user } = await requireUser();
     const slug = request.nextUrl.searchParams.get("slug");
     const addressId = request.nextUrl.searchParams.get("addressId");
-    let query = supabase.from("restaurants").select("id,name,slug,description,phone,address_text,latitude,longitude,delivery_fee_base,delivery_fee_per_km,delivery_radius_km,active").eq("active", true).order("name");
+    let query = supabase.from("restaurants").select("id,name,slug,owner_name,description,phone,address_text,latitude,longitude,delivery_fee_base,delivery_fee_per_km,delivery_radius_km,active").eq("active", true).order("name");
     if (slug) query = query.eq("slug", slug);
     const { data: restaurants, error } = await query;
     if (error) throw error;
@@ -54,18 +56,26 @@ export async function POST(request: NextRequest) {
   try {
     const body = restaurantSchema.parse(await request.json());
     const { supabase, user } = await requireUser();
+    const signedInEmail = user.email?.toLowerCase() ?? null;
+    if (signedInEmail && signedInEmail !== body.ownerEmail) {
+      return NextResponse.json({ error: "Use the Gmail address linked to your signed-in staff account." }, { status: 409 });
+    }
     const { data, error } = await supabase.from("restaurants").insert({
       created_by: user.id,
       name: body.name,
       slug: body.slug,
+      owner_name: body.ownerName,
+      owner_email: body.ownerEmail,
       description: body.description ?? null,
       phone: body.phone ?? null,
       address_text: body.addressText,
       latitude: body.latitude,
       longitude: body.longitude,
-    }).select("id,name,slug").single();
+    }).select("id,name,slug,owner_name,owner_email").single();
     if (error) throw error;
-    return NextResponse.json(data, { status: 201 });
+    const { error: profileError } = await supabase.from("profiles").update({ display_name: body.ownerName }).eq("id", user.id);
+    if (profileError) throw profileError;
+    return NextResponse.json({ ...data, ownerEmailNeedsConfirmation: Boolean(user.is_anonymous) }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Check your restaurant details and try again." }, { status: 400 });
     return apiError(error, "The restaurant could not be created.");
