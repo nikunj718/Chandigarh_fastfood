@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isVerifiedUser } from "@/lib/identity";
-import { safeNextPath } from "@/lib/auth-redirect";
+import { safeReturnPath } from "@/lib/auth-redirect";
+import { getAuthenticatedLandingForUser } from "@/lib/session-routing";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
-  const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+  const next = safeReturnPath(request.nextUrl.searchParams.get("next"));
   const error = request.nextUrl.searchParams.get("error_description") ?? request.nextUrl.searchParams.get("error");
   if (error) return NextResponse.redirect(new URL(`/?authError=${encodeURIComponent(error)}`, request.url));
 
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     if (userError || !data.user || !isVerifiedUser(data.user)) {
       return NextResponse.redirect(new URL("/?authError=Confirm+your+email+before+continuing.", request.url));
     }
-    return NextResponse.redirect(new URL(next, request.url));
+    return NextResponse.redirect(new URL(next ?? await getAuthenticatedLandingForUser(supabase, data.user), request.url));
   } catch {
     return NextResponse.redirect(new URL("/?authError=We+could+not+complete+sign-in.+Please+try+again.", request.url));
   }

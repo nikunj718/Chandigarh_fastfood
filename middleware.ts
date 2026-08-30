@@ -7,7 +7,9 @@ import { safeNextPath } from "@/lib/auth-redirect";
 type SupabaseCookie = { name: string; value: string; options: CookieOptions };
 
 export async function middleware(request: NextRequest) {
-  if (!hasSupabaseConfig() || !env.supabaseUrl || !env.supabaseAnonKey) return NextResponse.redirect(new URL("/", request.url));
+  if (!hasSupabaseConfig() || !env.supabaseUrl || !env.supabaseAnonKey) {
+    return request.nextUrl.pathname === "/" ? NextResponse.next({ request }) : NextResponse.redirect(new URL("/", request.url));
+  }
   let response = NextResponse.next({ request });
   const supabase = createServerClient(env.supabaseUrl, env.supabaseAnonKey, {
     cookies: {
@@ -28,4 +30,4 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-export const config = { matcher: ["/admin/:path*", "/rider/:path*", "/tracking/:path*"] };
+export const config = { matcher: ["/", "/staff", "/admin", "/admin/:path*", "/rider", "/rider/:path*", "/tracking", "/tracking/:path*"] };

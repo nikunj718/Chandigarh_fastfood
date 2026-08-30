@@ -29,6 +29,8 @@ npm run dev
 
 Anyone can browse active restaurants and menus. Ordering, saved addresses, restaurant publishing, Operations, rider shifts, and private tracking require a confirmed Email/Password account or Google OAuth account. The app never creates anonymous sessions, sends SMS OTPs, or stores a guest user marker.
 
+Returning confirmed users never see a login portal at `/` or `/staff`: customers and rider-only users go to `/restaurants`, one owner/manager restaurant opens its Operations dashboard, and multiple owner/manager memberships open the protected `/admin` restaurant picker. A safe requested URL—such as a particular dashboard or order-tracking page—always wins over this automatic landing rule.
+
 Every checkout requires a valid Indian delivery phone number. It is encrypted in the customer profile for future checkout prefill and encrypted again as an immutable order snapshot. Plaintext is returned only to the customer, authorized restaurant owners/managers, and the rider assigned to that delivery.
 
 Staff use the same verified Email/Password or Google sign-in at `/staff`. Owners add managers and riders by their already-confirmed email address.

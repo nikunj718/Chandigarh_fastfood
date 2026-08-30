@@ -6,14 +6,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusNote } from "@/components/ui/status-note";
-import { authCallbackUrl, safeNextPath } from "@/lib/auth-redirect";
+import { authCallbackUrl, safeReturnPath } from "@/lib/auth-redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Mode = "sign-in" | "sign-up";
 
-export function AuthAccessForm({ nextPath = "/restaurants" }: { nextPath?: string }) {
+export function AuthAccessForm({ nextPath }: { nextPath?: string | null }) {
   const router = useRouter();
-  const next = safeNextPath(nextPath);
+  const next = safeReturnPath(nextPath);
   const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -65,7 +65,7 @@ export function AuthAccessForm({ nextPath = "/restaurants" }: { nextPath?: strin
           setConfirmationPending(true);
           throw new Error("Confirm your email before signing in.");
         }
-        router.replace(next);
+        router.replace(next ?? "/");
         return;
       }
       const { data, error } = await supabase.auth.signUp({
@@ -75,7 +75,7 @@ export function AuthAccessForm({ nextPath = "/restaurants" }: { nextPath?: strin
       });
       if (error) throw error;
       if (data.session && data.user?.email_confirmed_at) {
-        router.replace(next);
+        router.replace(next ?? "/");
         return;
       }
       setConfirmationPending(true);

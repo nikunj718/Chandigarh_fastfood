@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { authCallbackUrl, safeNextPath } from "@/lib/auth-redirect";
+import { authCallbackUrl, safeNextPath, safeReturnPath } from "@/lib/auth-redirect";
 import { isVerifiedUser } from "@/lib/identity";
+import { managementDestination } from "@/lib/session-routing";
 
 describe("authentication redirect safety", () => {
   it("keeps only same-origin application paths", () => {
@@ -8,6 +9,22 @@ describe("authentication redirect safety", () => {
     expect(safeNextPath("https://attacker.example")).toBe("/restaurants");
     expect(safeNextPath("//attacker.example")).toBe("/restaurants");
     expect(authCallbackUrl("https://app.example", "/restaurants/demo")).toBe("https://app.example/auth/callback?next=%2Frestaurants%2Fdemo");
+    expect(safeReturnPath("https://attacker.example")).toBeNull();
+    expect(authCallbackUrl("https://app.example")).toBe("https://app.example/auth/callback");
+  });
+});
+
+describe("post-auth session landing", () => {
+  it("routes customers and rider-only users to the restaurant directory", () => {
+    expect(managementDestination([])).toBe("/restaurants");
+  });
+
+  it("opens a single owner or manager restaurant directly", () => {
+    expect(managementDestination([{ id: "restaurant-1" }])).toBe("/admin/restaurant-1");
+  });
+
+  it("opens the management picker for multiple restaurants", () => {
+    expect(managementDestination([{ id: "restaurant-1" }, { id: "restaurant-2" }])).toBe("/admin");
   });
 });
 
