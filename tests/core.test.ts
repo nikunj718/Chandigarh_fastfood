@@ -3,7 +3,7 @@ import { calculateDeliveryFee, haversineKm } from "@/lib/geospatial";
 import { normalizeIndianPhone } from "@/lib/utils";
 import { updateCartLine } from "@/store/useCartStore";
 
-describe("India phone authentication", () => {
+describe("India delivery phone validation", () => {
   it("normalizes a valid mobile number to E.164", () => {
     expect(normalizeIndianPhone("98765 43210")).toBe("+919876543210");
     expect(normalizeIndianPhone("+91 98765 43210")).toBe("+919876543210");

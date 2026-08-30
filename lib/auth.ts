@@ -13,7 +13,7 @@ export function apiError(error: unknown, fallback = "Request could not be comple
   if (message === "UNAUTHORIZED") return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
   if (message === "FORBIDDEN") return NextResponse.json({ error: "You do not have access to this restaurant." }, { status: 403 });
   if (message === "NOT_FOUND") return NextResponse.json({ error: "The requested record was not found." }, { status: 404 });
-  if (message.includes("not configured") || message.includes("Missing server configuration")) {
+  if (message.includes("not configured") || message.includes("Missing server configuration") || message.includes("encryption is not configured")) {
     return NextResponse.json({ error: "This feature has not been configured yet." }, { status: 503 });
   }
   console.error("API request failed", error);

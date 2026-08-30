@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusNote } from "@/components/ui/status-note";
+import { GuestProfileIndicator } from "@/components/auth/guest-profile-indicator";
 import { formatINR } from "@/lib/utils";
 import type { Address, Restaurant } from "@/lib/types";
 
@@ -49,7 +50,7 @@ export function RestaurantDirectory() {
   }
 
   return <main className="min-h-screen bg-cream">
-    <header className="border-b border-orange-100 bg-white/80 px-5 py-5 backdrop-blur"><div className="mx-auto flex max-w-6xl items-center justify-between"><Link href="/restaurants" className="flex items-center gap-2 font-bold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-saffron text-white"><UtensilsCrossed className="h-4 w-4" /></span>Chandigarh Fastfood</Link><Button size="sm" variant="secondary" onClick={() => setCreating((value) => !value)}><Plus className="h-4 w-4" />Open a restaurant</Button></div></header>
+    <header className="border-b border-orange-100 bg-white/80 px-5 py-5 backdrop-blur"><div className="mx-auto flex max-w-6xl items-center justify-between gap-3"><Link href="/restaurants" className="flex items-center gap-2 font-bold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-saffron text-white"><UtensilsCrossed className="h-4 w-4" /></span>Chandigarh Fastfood</Link><div className="flex items-center gap-2"><GuestProfileIndicator /><Button size="sm" variant="secondary" onClick={() => setCreating((value) => !value)}><Plus className="h-4 w-4" />Open a restaurant</Button></div></div></header>
     <section className="mx-auto max-w-6xl px-5 py-12">
       <p className="text-sm font-bold uppercase tracking-[.18em] text-saffron">Choose your kitchen</p>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-5"><div><h1 className="display-font text-4xl sm:text-5xl">What are you in the mood for?</h1><p className="mt-3 max-w-xl text-stone-600">Independent Chandigarh kitchens, each with their own menu, radius, and delivery team.</p></div>

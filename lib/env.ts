@@ -8,6 +8,7 @@ export const env = {
   mapboxPublicToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
   mapboxSecretToken: process.env.MAPBOX_SECRET_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
   credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
+  customerContactEncryptionKey: process.env.CUSTOMER_CONTACT_ENCRYPTION_KEY,
 };
 
 export function hasSupabaseConfig() {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError, requireRestaurantManager } from "@/lib/auth";
 import { encryptCredential, hasCompleteRazorpayCredentials, maskRazorpayKeyId } from "@/lib/restaurant-credentials";
+import { decryptCustomerContact } from "@/lib/customer-contact";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 
 const credentialFields = ["razorpayKeyId", "razorpayKeySecret", "razorpayWebhookSecret"] as const;
@@ -60,6 +61,14 @@ function credentialPayload(body: z.infer<typeof settingsSchema>) {
   };
 }
 
+function safeOrderForAdmin(order: Record<string, unknown>) {
+  const { delivery_phone_ciphertext, ...safeOrder } = order;
+  return {
+    ...safeOrder,
+    deliveryPhone: typeof delivery_phone_ciphertext === "string" ? decryptCustomerContact(delivery_phone_ciphertext) : null,
+  };
+}
+
 export async function GET(_request: NextRequest, context: { params: Promise<{ restaurantId: string }> }) {
   try {
     const { restaurantId } = await context.params;
@@ -67,14 +76,14 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ re
     const [restaurant, categories, orders, members] = await Promise.all([
       supabase.from("restaurants").select(restaurantColumns).eq("id", restaurantId).single(),
       supabase.from("menu_categories").select("*,menu_items(*)").eq("restaurant_id", restaurantId).order("sort_order"),
-      supabase.from("orders").select("id,status,payment_method,payment_status,total,created_at,delivery_assignments(rider_id)").eq("restaurant_id", restaurantId).order("created_at", { ascending: false }).limit(30),
-      supabase.from("restaurant_memberships").select("user_id,role,profiles(display_name,phone)").eq("restaurant_id", restaurantId),
+      supabase.from("orders").select("id,status,payment_method,payment_status,total,created_at,delivery_phone_ciphertext,delivery_phone_last4,delivery_assignments(rider_id)").eq("restaurant_id", restaurantId).order("created_at", { ascending: false }).limit(30),
+      supabase.from("restaurant_memberships").select("user_id,role,profiles(display_name,email)").eq("restaurant_id", restaurantId),
     ]);
     if (restaurant.error) throw restaurant.error;
     if (categories.error) throw categories.error;
     if (orders.error) throw orders.error;
     if (members.error) throw members.error;
-    return NextResponse.json({ restaurant: safeRestaurantForAdmin(restaurant.data as Record<string, unknown>), categories: categories.data, orders: orders.data, members: members.data, membershipRole: membership.role });
+    return NextResponse.json({ restaurant: safeRestaurantForAdmin(restaurant.data as Record<string, unknown>), categories: categories.data, orders: (orders.data ?? []).map((order) => safeOrderForAdmin(order as Record<string, unknown>)), members: members.data, membershipRole: membership.role });
   } catch (error) { return apiError(error, "Restaurant operations could not be loaded."); }
 }
 

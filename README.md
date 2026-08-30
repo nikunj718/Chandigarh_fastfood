@@ -1,12 +1,12 @@
 # Chandigarh Fastfood
 
-Multi-restaurant food ordering for India, built with Next.js App Router, Supabase Phone Auth, Mapbox, Razorpay, Zustand, Framer Motion, and an active-shift rider PWA.
+Multi-restaurant food ordering for India, built with Next.js App Router, Supabase anonymous guest sessions, email/password staff access, Mapbox, Razorpay, Zustand, Framer Motion, and an active-shift rider PWA.
 
 ## Run locally
 
 1. Copy `.env.example` to `.env.local` and set the values below. Never expose a Supabase service-role key or the credential-encryption key to the browser.
-2. In Supabase, enable Phone Auth, configure an SMS provider, and add the local/production redirect URLs as appropriate.
-3. Apply every migration in `supabase/migrations/` to a Supabase project with PostGIS enabled, including `202608290002_restaurant_razorpay_credentials.sql`.
+2. In Supabase Auth, enable Anonymous Sign-Ins, Email/Password, Confirm Email, and manual identity linking. Configure SMTP/transactional email plus local and production redirect URLs, including `/staff`.
+3. Apply every migration in `supabase/migrations/` to a Supabase project with PostGIS enabled, including `202608300003_anonymous_guest_contacts.sql`.
 4. Enable Realtime replication for `delivery_location_points` if your Supabase project does not automatically respect the migration publication change.
 5. Install and start the app:
 
@@ -24,6 +24,15 @@ npm run dev
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Browser maps and owner pin picker |
 | `MAPBOX_SECRET_TOKEN` | Server-only address search and Directions quotes/ETAs |
 | `CREDENTIAL_ENCRYPTION_KEY` | Base64-encoded 32-byte server-only key that encrypts each restaurant's Razorpay API and webhook secrets |
+| `CUSTOMER_CONTACT_ENCRYPTION_KEY` | Separate base64-encoded 32-byte server-only key that encrypts guest delivery contacts and order snapshots |
+
+## Guest sessions and staff access
+
+Customers enter automatically through a Supabase anonymous session, then browse and order without SMS. A browser-local guest UUID marker supports the experience, but Supabase’s persisted session is the only authentication source; clearing browser data loses an anonymous account.
+
+Every checkout requires a valid Indian delivery phone number. It is encrypted in the customer profile for future checkout prefill and encrypted again as an immutable order snapshot. Plaintext is returned only to the customer, authorized restaurant owners/managers, and the rider assigned to that delivery.
+
+Staff use verified email/password accounts at `/staff`. An anonymous owner can secure their current account from that page: email verification and password setup preserve the existing user ID and restaurant memberships. Owners add managers and riders by their already-confirmed email address.
 
 ## Per-restaurant Razorpay setup
 
@@ -35,7 +44,7 @@ For each restaurant Razorpay account, configure `payment.captured` and `payment.
 
 - Any authenticated user may create an active restaurant and receives an owner membership for it.
 - Each restaurant has isolated categories, items, fees, radius, orders, riders, and live-location points.
-- Owners can add phone-authenticated managers and riders. Only owners can configure or remove their restaurant's Razorpay credentials; no membership policy permits assigning the `owner` role from the client.
+- Owners can add verified-email managers and riders. Only owners can configure or remove their restaurant's Razorpay credentials; no membership policy permits assigning the `owner` role from the client.
 - Customers retain one persisted cart draft per restaurant. Checkout re-reads all item prices, availability, restaurant coordinates, and delivery quote server-side.
 
 ## Delivery and tracking
@@ -51,4 +60,4 @@ npm test
 npm run build
 ```
 
-The included tests cover Indian phone normalization, delivery math, approximate directory distance, isolated cart-line behavior, and tenant credential encryption. Live Supabase, Mapbox, Razorpay, RLS, and webhook tests require configured project credentials.
+The included tests cover Indian delivery-phone normalization, encrypted contacts and tenant credentials, delivery math, approximate directory distance, and isolated cart-line behavior. Live Supabase, Mapbox, Razorpay, RLS, email-confirmation, and webhook tests require configured project credentials.

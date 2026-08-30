@@ -3,13 +3,16 @@ import { z } from "zod";
 import { apiError, requireUser } from "@/lib/auth";
 import { createDeliveryQuote } from "@/lib/delivery";
 import { CredentialConfigurationError, decryptRazorpayCredentials, type RazorpayCredentials } from "@/lib/restaurant-credentials";
+import { CustomerContactError, encryptCustomerContact, lastFourDigits } from "@/lib/customer-contact";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { normalizeIndianPhone } from "@/lib/utils";
 
 const checkoutSchema = z.object({
   restaurantId: z.string().uuid(),
   addressId: z.string().uuid(),
   paymentMethod: z.enum(["cod", "razorpay"]),
   idempotencyKey: z.string().uuid(),
+  deliveryPhone: z.string().trim().min(1).max(30),
   notes: z.string().trim().max(500).optional(),
   lines: z.array(z.object({ itemId: z.string().uuid(), quantity: z.number().int().min(1).max(50) })).min(1).max(30),
 });
@@ -50,6 +53,8 @@ function onlinePaymentError(error: CredentialConfigurationError) {
 export async function POST(request: NextRequest) {
   try {
     const input = checkoutSchema.parse(await request.json());
+    const deliveryPhone = normalizeIndianPhone(input.deliveryPhone);
+    if (!deliveryPhone) return NextResponse.json({ error: "Enter a valid 10-digit Indian delivery number." }, { status: 400 });
     const { supabase, user } = await requireUser();
     const existing = await supabase.from("orders").select("id,restaurant_id,status,payment_method,razorpay_order_id,total,razorpay_key_id_snapshot,razorpay_key_secret_snapshot,razorpay_webhook_secret_snapshot").eq("customer_id", user.id).eq("idempotency_key", input.idempotencyKey).maybeSingle();
     if (existing.error) throw existing.error;
@@ -109,6 +114,8 @@ export async function POST(request: NextRequest) {
       route_duration_seconds: quote.durationSeconds,
       customer_address_snapshot: address,
       restaurant_snapshot: restaurantSnapshot,
+      delivery_phone_ciphertext: encryptCustomerContact(deliveryPhone),
+      delivery_phone_last4: lastFourDigits(deliveryPhone),
       razorpay_key_id_snapshot: credentials?.keyId ?? null,
       razorpay_key_secret_snapshot: credentials ? razorpay_key_secret : null,
       razorpay_webhook_secret_snapshot: credentials ? razorpay_webhook_secret : null,
@@ -129,6 +136,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Your checkout details are incomplete." }, { status: 400 });
     if (error instanceof CredentialConfigurationError) return onlinePaymentError(error);
+    if (error instanceof CustomerContactError) return NextResponse.json({ error: "DELIVERY_CONTACT_CONFIGURATION_ERROR", message: "Delivery contact saving is temporarily unavailable." }, { status: 503 });
     return apiError(error, "Checkout could not be completed.");
   }
 }
