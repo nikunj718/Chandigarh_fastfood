@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { ChevronDown, ChevronRight, CreditCard, ImagePlus, LoaderCircle, PackageCheck, Plus, Settings2, ShieldCheck, Trash2, UsersRound } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StoreLocationPicker } from "@/components/maps/store-location-picker";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusNote } from "@/components/ui/status-note";
 import { defaultOperatingHours, weekdayLabels } from "@/lib/operating-hours";
+import { env } from "@/lib/env";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { MenuItem, OperatingHour } from "@/lib/types";
 import { formatINR } from "@/lib/utils";
 
@@ -34,7 +36,7 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
   const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(() => new Set());
 
-  async function load() {
+  const load = useCallback(async () => {
     const response = await fetch(`/api/admin/restaurants/${restaurantId}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error ?? "Operations could not be loaded.");
@@ -42,11 +44,37 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
     setOperatingHours(payload.operatingHours ?? defaultOperatingHours());
     setCoordinates({ latitude: Number(payload.restaurant.latitude), longitude: Number(payload.restaurant.longitude) });
     setItem((current) => ({ ...current, categoryId: current.categoryId || payload.categories[0]?.id || "" }));
-  }
+  }, [restaurantId]);
+
+  const loadOrders = useCallback(async () => {
+    const response = await fetch(`/api/admin/restaurants/${restaurantId}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error ?? "Live orders could not be loaded.");
+    setData((current) => current ? { ...current, orders: payload.orders } : payload);
+  }, [restaurantId]);
 
   useEffect(() => {
     void load().catch((error) => setMessage(error instanceof Error ? error.message : "Operations could not be loaded."));
-  }, [restaurantId]);
+  }, [load]);
+
+  useEffect(() => {
+    if (!env.supabaseUrl || !env.supabaseAnonKey) return;
+    const supabase = getSupabaseBrowserClient();
+    const refreshOrders = () => { void loadOrders().catch(() => undefined); };
+    const channel = supabase
+      .channel(`restaurant-orders-${restaurantId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` }, refreshOrders)
+      .on("postgres_changes", { event: "*", schema: "public", table: "delivery_assignments", filter: `restaurant_id=eq.${restaurantId}` }, refreshOrders)
+      .subscribe();
+    const pollingId = window.setInterval(refreshOrders, 15_000);
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") refreshOrders(); };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(pollingId);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      void supabase.removeChannel(channel);
+    };
+  }, [loadOrders, restaurantId]);
 
   async function saveSettings(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
