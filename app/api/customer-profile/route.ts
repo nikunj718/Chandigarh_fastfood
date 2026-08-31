@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError, requireUser } from "@/lib/auth";
-import { CustomerContactError, decryptCustomerContact, encryptCustomerContact } from "@/lib/customer-contact";
+import { CustomerContactError, decryptOptionalCustomerContact, encryptCustomerContact } from "@/lib/customer-contact";
 import { hasRestaurantOwnerAccess } from "@/lib/session-routing";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { normalizeIndianPhone } from "@/lib/utils";
@@ -27,14 +27,15 @@ export async function GET() {
     if (profileResult.error) throw profileResult.error;
     if (ownerMembershipResult.error) throw ownerMembershipResult.error;
     const data = profileResult.data;
+    const deliveryContact = decryptOptionalCustomerContact(data?.default_delivery_phone_ciphertext ?? null);
     return NextResponse.json({
       email: data?.email ?? user.email,
       displayName: data?.display_name ?? null,
-      defaultDeliveryPhone: data?.default_delivery_phone_ciphertext ? decryptCustomerContact(data.default_delivery_phone_ciphertext) : null,
+      defaultDeliveryPhone: deliveryContact.value,
+      deliveryContactUnavailable: deliveryContact.unavailable,
       isRestaurantOwner: hasRestaurantOwnerAccess(ownerMembershipResult.data ?? []),
     });
   } catch (error) {
-    if (error instanceof CustomerContactError) return NextResponse.json({ error: "Your saved delivery contact is unavailable. Enter it again at checkout." }, { status: 503 });
     return apiError(error, "Customer profile could not be loaded.");
   }
 }

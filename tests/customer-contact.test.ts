@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CustomerContactError, decryptCustomerContact, encryptCustomerContact, lastFourDigits } from "@/lib/customer-contact";
+import { CustomerContactError, decryptCustomerContact, decryptOptionalCustomerContact, encryptCustomerContact, lastFourDigits } from "@/lib/customer-contact";
 
 const originalEncryptionKey = process.env.CUSTOMER_CONTACT_ENCRYPTION_KEY;
 
@@ -22,6 +22,10 @@ describe("guest delivery contact encryption", () => {
 
   it("rejects altered encrypted contacts", () => {
     expect(() => decryptCustomerContact(`${encryptCustomerContact("+919876543210")}altered`)).toThrow(CustomerContactError);
+  });
+
+  it("makes an unreadable saved contact non-blocking", () => {
+    expect(decryptOptionalCustomerContact(`${encryptCustomerContact("+919876543210")}altered`)).toEqual({ value: null, unavailable: true });
   });
 
   it("retains only the order-safe last four digit display value", () => {

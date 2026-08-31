@@ -46,6 +46,16 @@ export function decryptCustomerContact(value: string) {
   }
 }
 
+export function decryptOptionalCustomerContact(value: string | null) {
+  if (!value) return { value: null, unavailable: false };
+  try {
+    return { value: decryptCustomerContact(value), unavailable: false };
+  } catch (error) {
+    if (error instanceof CustomerContactError) return { value: null, unavailable: true };
+    throw error;
+  }
+}
+
 export function lastFourDigits(phone: string) {
   return phone.replace(/\D/g, "").slice(-4);
 }

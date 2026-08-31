@@ -75,7 +75,7 @@ export function CartSheet({ restaurant, items }: { restaurant: Restaurant; items
       checkoutId.current ??= crypto.randomUUID();
       const response = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restaurantId: restaurant.id, addressId: selectedAddressId, paymentMethod, idempotencyKey: checkoutId.current, deliveryPhone, lines: validLines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })) }) });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "Checkout could not be completed.");
+      if (!response.ok) throw new Error(payload.message ?? payload.error ?? "Checkout could not be completed.");
       if (paymentMethod === "cod") { cartState.clearCart(restaurant.id); checkoutId.current = null; router.push(`/tracking/${payload.orderId}`); return; }
       await openRazorpay(payload);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Checkout could not be completed."); }
