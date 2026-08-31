@@ -1,8 +1,4 @@
 -- Kitchen-to-delivery workflow, stable restaurant order numbers, and timeline data.
-do $$ begin
-  alter type public.order_status add value if not exists 'prepared' after 'preparing';
-exception when duplicate_object then null; end $$;
-
 alter table public.orders
   add column if not exists order_number bigint,
   add column if not exists preparation_minutes integer check (preparation_minutes between 1 and 240),
