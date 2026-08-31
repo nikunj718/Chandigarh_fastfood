@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foodImageExtension, MAX_FOOD_IMAGE_BYTES } from "@/lib/menu-media";
+import { foodImageExtension, foodImageObjectPath, MAX_FOOD_IMAGE_BYTES } from "@/lib/menu-media";
 import { defaultOperatingHours, isRestaurantOpenNow, normalizeOperatingHours, operatingHoursSchema } from "@/lib/operating-hours";
 
 describe("restaurant operating hours", () => {
@@ -30,5 +30,11 @@ describe("food image validation", () => {
     expect(foodImageExtension("image/webp")).toBe("webp");
     expect(foodImageExtension("image/svg+xml")).toBeNull();
     expect(MAX_FOOD_IMAGE_BYTES).toBe(5 * 1024 * 1024);
+  });
+
+  it("only cleans up the deleted dish's own storage object", () => {
+    expect(foodImageObjectPath("https://example.supabase.co/storage/v1/object/public/restaurant-food-images/restaurant-1/item-1/photo.jpg", "restaurant-1", "item-1")).toBe("restaurant-1/item-1/photo.jpg");
+    expect(foodImageObjectPath("https://example.supabase.co/storage/v1/object/public/restaurant-food-images/restaurant-1/item-2/photo.jpg", "restaurant-1", "item-1")).toBeNull();
+    expect(foodImageObjectPath("https://example.supabase.co/storage/v1/object/public/another-bucket/restaurant-1/item-1/photo.jpg", "restaurant-1", "item-1")).toBeNull();
   });
 });

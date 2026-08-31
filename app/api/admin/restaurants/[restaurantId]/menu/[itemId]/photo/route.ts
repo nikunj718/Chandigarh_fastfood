@@ -3,6 +3,10 @@ import { apiError, requireRestaurantManager } from "@/lib/auth";
 import { foodImageExtension, MAX_FOOD_IMAGE_BYTES } from "@/lib/menu-media";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 
+function isMissingFoodImageBucket(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "NoSuchBucket";
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ restaurantId: string; itemId: string }> }) {
   try {
     const { restaurantId, itemId } = await context.params;
@@ -46,6 +50,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ re
     }
     return NextResponse.json({ item: updated });
   } catch (error) {
+    if (isMissingFoodImageBucket(error)) {
+      return NextResponse.json({ error: "Food image storage is not ready. Apply the restaurant food image bucket migration, then try again." }, { status: 503 });
+    }
     return apiError(error, "The food photo could not be uploaded.");
   }
 }
