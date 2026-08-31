@@ -39,6 +39,7 @@ describe("post-auth session landing", () => {
 
   it("shows customer header operations access to owners only", () => {
     expect(hasRestaurantOwnerAccess([{ role: "owner" }])).toBe(true);
+    expect(hasRestaurantOwnerAccess([], [{ id: "restaurant-1" }])).toBe(true);
     expect(hasRestaurantOwnerAccess([{ role: "manager" }, { role: "rider" }])).toBe(false);
   });
 

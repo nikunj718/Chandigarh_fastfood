@@ -11,7 +11,8 @@ const contactSchema = z.object({ deliveryPhone: z.string().trim().min(1).max(30)
 export async function GET() {
   try {
     const { supabase, user } = await requireUser();
-    const [profileResult, ownerMembershipResult] = await Promise.all([
+    const ownerEmail = user.email?.trim().toLowerCase();
+    const [profileResult, ownerMembershipResult, ownerRestaurantResult] = await Promise.all([
       supabase
         .from("profiles")
         .select("email,display_name,default_delivery_phone_ciphertext")
@@ -23,9 +24,13 @@ export async function GET() {
         .eq("user_id", user.id)
         .eq("role", "owner")
         .limit(1),
+      ownerEmail
+        ? getSupabaseAdminClient().from("restaurants").select("id").eq("owner_email", ownerEmail).limit(1)
+        : Promise.resolve({ data: [], error: null }),
     ]);
     if (profileResult.error) throw profileResult.error;
     if (ownerMembershipResult.error) throw ownerMembershipResult.error;
+    if (ownerRestaurantResult.error) throw ownerRestaurantResult.error;
     const data = profileResult.data;
     const deliveryContact = decryptOptionalCustomerContact(data?.default_delivery_phone_ciphertext ?? null);
     return NextResponse.json({
@@ -33,7 +38,7 @@ export async function GET() {
       displayName: data?.display_name ?? null,
       defaultDeliveryPhone: deliveryContact.value,
       deliveryContactUnavailable: deliveryContact.unavailable,
-      isRestaurantOwner: hasRestaurantOwnerAccess(ownerMembershipResult.data ?? []),
+      isRestaurantOwner: hasRestaurantOwnerAccess(ownerMembershipResult.data ?? [], ownerRestaurantResult.data ?? []),
     });
   } catch (error) {
     return apiError(error, "Customer profile could not be loaded.");

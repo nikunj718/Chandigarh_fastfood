@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 
 export default async function AdminPickerPage() {
   const { supabase, user } = await requireUser();
-  const restaurants = await getManagedRestaurants(supabase, user.id);
+  const restaurants = await getManagedRestaurants(supabase, user.id, user.email);
   if (restaurants.length === 0) redirect("/restaurants");
   if (restaurants.length === 1) redirect(`/admin/${restaurants[0].id}`);
 

@@ -1,7 +1,7 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { hasSupabaseConfig } from "@/lib/env";
 import { isVerifiedUser } from "@/lib/identity";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ManagedRestaurant = {
   id: string;
@@ -32,8 +32,8 @@ export function managementDestination(restaurants: Pick<ManagedRestaurant, "id">
   return "/admin";
 }
 
-export function hasRestaurantOwnerAccess(memberships: Array<{ role: string }>) {
-  return memberships.some((membership) => membership.role === "owner");
+export function hasRestaurantOwnerAccess(memberships: Array<{ role: string }>, restaurantsOwnedByEmail: Array<unknown> = []) {
+  return memberships.some((membership) => membership.role === "owner") || restaurantsOwnedByEmail.length > 0;
 }
 
 export function managedRestaurantsFromMemberships(memberships: MembershipRow[]): ManagedRestaurant[] {
@@ -52,7 +52,7 @@ export function managedRestaurantsFromMemberships(memberships: MembershipRow[]):
   });
 }
 
-export async function getManagedRestaurants(supabase: SupabaseClient, userId: string): Promise<ManagedRestaurant[]> {
+export async function getManagedRestaurants(supabase: SupabaseClient, userId: string, userEmail?: string | null): Promise<ManagedRestaurant[]> {
   const { data, error } = await supabase
     .from("restaurant_memberships")
     .select("restaurant_id,role,restaurants(id,name,slug,address_text,active)")
@@ -60,12 +60,32 @@ export async function getManagedRestaurants(supabase: SupabaseClient, userId: st
     .in("role", ["owner", "manager"])
     .order("created_at", { ascending: false });
   if (error) throw error;
+  const managed = managedRestaurantsFromMemberships(data ?? []);
+  const ownerEmail = userEmail?.trim().toLowerCase();
+  if (!ownerEmail) return managed;
 
-  return managedRestaurantsFromMemberships(data ?? []);
+  const { data: ownedRestaurants, error: ownedRestaurantsError } = await getSupabaseAdminClient()
+    .from("restaurants")
+    .select("id,name,slug,address_text,active")
+    .eq("owner_email", ownerEmail);
+  if (ownedRestaurantsError) throw ownedRestaurantsError;
+
+  const byId = new Map(managed.map((restaurant) => [restaurant.id, restaurant]));
+  for (const restaurant of ownedRestaurants ?? []) {
+    byId.set(restaurant.id, {
+      id: restaurant.id,
+      name: restaurant.name,
+      slug: restaurant.slug,
+      addressText: restaurant.address_text,
+      active: restaurant.active,
+      role: "owner",
+    });
+  }
+  return [...byId.values()];
 }
 
 export async function getAuthenticatedLandingForUser(supabase: SupabaseClient, user: User) {
-  return managementDestination(await getManagedRestaurants(supabase, user.id));
+  return managementDestination(await getManagedRestaurants(supabase, user.id, user.email));
 }
 
 export async function getOptionalSessionLanding() {

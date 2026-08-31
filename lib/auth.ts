@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isVerifiedUser } from "@/lib/identity";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server";
 
 export { isVerifiedUser } from "@/lib/identity";
 
@@ -35,6 +35,24 @@ export async function requireRestaurantManager(restaurantId: string) {
     .in("role", ["owner", "manager"])
     .maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error("FORBIDDEN");
-  return { supabase, user, membership: data };
+  if (data) return { supabase, user, membership: data };
+
+  const ownerEmail = user.email?.trim().toLowerCase();
+  if (!ownerEmail) throw new Error("FORBIDDEN");
+  const admin = getSupabaseAdminClient();
+  const { data: restaurant, error: restaurantError } = await admin
+    .from("restaurants")
+    .select("owner_email")
+    .eq("id", restaurantId)
+    .maybeSingle();
+  if (restaurantError) throw restaurantError;
+  if (restaurant?.owner_email?.trim().toLowerCase() !== ownerEmail) throw new Error("FORBIDDEN");
+
+  const { data: repairedMembership, error: repairedMembershipError } = await admin
+    .from("restaurant_memberships")
+    .upsert({ restaurant_id: restaurantId, user_id: user.id, role: "owner" }, { onConflict: "restaurant_id,user_id" })
+    .select("role")
+    .single();
+  if (repairedMembershipError) throw repairedMembershipError;
+  return { supabase, user, membership: repairedMembership };
 }
