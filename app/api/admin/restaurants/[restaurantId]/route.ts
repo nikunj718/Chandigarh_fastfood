@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError, requireRestaurantManager } from "@/lib/auth";
 import { encryptCredential, hasCompleteRazorpayCredentials, maskRazorpayKeyId } from "@/lib/restaurant-credentials";
-import { decryptCustomerContact } from "@/lib/customer-contact";
 import { normalizeOperatingHours, operatingHoursSchema } from "@/lib/operating-hours";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -63,14 +62,6 @@ function credentialPayload(body: z.infer<typeof settingsSchema>) {
   };
 }
 
-function safeOrderForAdmin(order: Record<string, unknown>) {
-  const { delivery_phone_ciphertext, ...safeOrder } = order;
-  return {
-    ...safeOrder,
-    deliveryPhone: typeof delivery_phone_ciphertext === "string" ? decryptCustomerContact(delivery_phone_ciphertext) : null,
-  };
-}
-
 class OperationsDataError extends Error {
   constructor(readonly stage: string, readonly databaseError: unknown) {
     super(`Operations data query failed: ${stage}`);
@@ -103,17 +94,15 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ re
   try {
     ({ restaurantId } = await context.params);
     const { supabase, user, membership } = await requireRestaurantManager(restaurantId);
-    const [restaurant, categories, orders, members, hours, profile] = await Promise.all([
+    const [restaurant, categories, members, hours, profile] = await Promise.all([
       supabase.from("restaurants").select(restaurantColumns).eq("id", restaurantId).maybeSingle(),
       supabase.from("menu_categories").select("*,menu_items(*)").eq("restaurant_id", restaurantId).order("sort_order"),
-      supabase.from("orders").select("id,status,payment_method,payment_status,total,created_at,delivery_phone_ciphertext,delivery_phone_last4,delivery_assignments(rider_id)").eq("restaurant_id", restaurantId).order("created_at", { ascending: false }).limit(30),
       supabase.from("restaurant_memberships").select("user_id,role").eq("restaurant_id", restaurantId),
       supabase.from("restaurant_operating_hours").select("day_of_week,is_closed,opens_at,closes_at").eq("restaurant_id", restaurantId).order("day_of_week"),
       supabase.from("profiles").select("email_verified").eq("id", user.id).maybeSingle(),
     ]);
     requireQuerySuccess("restaurant", restaurant.error);
     requireQuerySuccess("menu categories", categories.error);
-    requireQuerySuccess("orders", orders.error);
     requireQuerySuccess("restaurant memberships", members.error);
     requireQuerySuccess("operating hours", hours.error);
     requireQuerySuccess("owner profile", profile.error);
@@ -133,7 +122,6 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ re
     return NextResponse.json({
       restaurant: safeRestaurantForAdmin(restaurant.data as Record<string, unknown>),
       categories: categories.data ?? [],
-      orders: (orders.data ?? []).map((order) => safeOrderForAdmin(order as Record<string, unknown>)),
       members: teamMembers,
       membershipRole: membership.role,
       operatingHours: normalizeOperatingHours(hours.data),

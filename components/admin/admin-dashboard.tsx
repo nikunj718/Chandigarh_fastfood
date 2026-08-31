@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, ChevronRight, CreditCard, ImagePlus, LoaderCircle, PackageCheck, Plus, Settings2, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, CreditCard, ImagePlus, LoaderCircle, PackageCheck, Plus, Settings2, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StoreLocationPicker } from "@/components/maps/store-location-picker";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { StatusNote } from "@/components/ui/status-note";
 import { defaultOperatingHours, weekdayLabels } from "@/lib/operating-hours";
 import { env } from "@/lib/env";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { allowedOrderActions, orderStatusLabels, todayInIndia } from "@/lib/order-workflow";
 import type { MenuItem, OperatingHour } from "@/lib/types";
 import { formatINR } from "@/lib/utils";
 
@@ -18,11 +19,17 @@ type AdminCategory = { id: string; name: string; menu_items?: MenuItem[] };
 type Operations = {
   restaurant: any;
   categories: AdminCategory[];
-  orders: any[];
   members: any[];
   membershipRole: "owner" | "manager";
   operatingHours: OperatingHour[];
   ownerAccountNeedsSecurity: boolean;
+};
+
+type OperationsOrderFeed = {
+  date: string;
+  orders: any[];
+  nextCursor: number | null;
+  summary: { acceptedOrderCount: number; acceptedGrossValue: number };
 };
 
 export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
@@ -35,6 +42,10 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
   const [operatingHours, setOperatingHours] = useState<OperatingHour[]>(defaultOperatingHours());
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
   const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(() => new Set());
+  const [orderDate, setOrderDate] = useState(() => todayInIndia());
+  const [orderFeed, setOrderFeed] = useState<OperationsOrderFeed | null>(null);
+  const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
+  const [preparationMinutesByOrder, setPreparationMinutesByOrder] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/admin/restaurants/${restaurantId}`);
@@ -46,16 +57,24 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
     setItem((current) => ({ ...current, categoryId: current.categoryId || payload.categories[0]?.id || "" }));
   }, [restaurantId]);
 
-  const loadOrders = useCallback(async () => {
-    const response = await fetch(`/api/admin/restaurants/${restaurantId}`);
+  const loadOrders = useCallback(async (options: { append?: boolean; cursor?: number | null } = {}) => {
+    const search = new URLSearchParams({ date: orderDate, limit: "10" });
+    if (options.cursor) search.set("cursor", String(options.cursor));
+    const response = await fetch(`/api/admin/restaurants/${restaurantId}/orders?${search.toString()}`);
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error ?? "Live orders could not be loaded.");
-    setData((current) => current ? { ...current, orders: payload.orders } : payload);
-  }, [restaurantId]);
+    if (!response.ok) throw new Error(payload.error ?? "Orders could not be loaded.");
+    setOrderFeed((current) => options.append && current && current.date === payload.date
+      ? { ...payload, orders: [...current.orders, ...payload.orders] }
+      : payload);
+  }, [orderDate, restaurantId]);
 
   useEffect(() => {
     void load().catch((error) => setMessage(error instanceof Error ? error.message : "Operations could not be loaded."));
   }, [load]);
+
+  useEffect(() => {
+    void loadOrders().catch((error) => setMessage(error instanceof Error ? error.message : "Orders could not be loaded."));
+  }, [loadOrders]);
 
   useEffect(() => {
     if (!env.supabaseUrl || !env.supabaseAnonKey) return;
@@ -160,10 +179,16 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
   }
 
   async function updateOrder(id: string, status: string) {
-    const response = await fetch(`/api/admin/orders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+    const preparationMinutes = Number(preparationMinutesByOrder[id] ?? 30);
+    if (status === "confirmed" && (!Number.isInteger(preparationMinutes) || preparationMinutes < 1 || preparationMinutes > 240)) {
+      setMessage("Enter a preparation time between 1 and 240 minutes before confirming this order.");
+      return;
+    }
+    const response = await fetch(`/api/admin/orders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, ...(status === "confirmed" ? { preparationMinutes } : {}) }) });
     const result = await response.json();
     if (!response.ok) { setMessage(result.error); return; }
-    await load();
+    setMessage(`${orderStatusLabels[status as keyof typeof orderStatusLabels] ?? status} updated.`);
+    await loadOrders();
   }
 
   async function assignRider(orderId: string, riderId: string) {
@@ -172,7 +197,7 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
     const result = await response.json();
     if (!response.ok) { setMessage(result.error); return; }
     setMessage("Rider assigned.");
-    await load();
+    await loadOrders();
   }
 
   if (!data || !coordinates) return <main className="grid min-h-screen place-items-center bg-cream"><LoaderCircle className="h-7 w-7 animate-spin text-saffron" /></main>;
@@ -184,7 +209,7 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
     <header className="border-b border-orange-100 bg-white px-5 py-4"><div className="mx-auto flex max-w-6xl items-center justify-between"><Link href={`/restaurants/${restaurant.slug}`} className="font-bold">← {restaurant.name}</Link><span className="rounded-full bg-ink px-3 py-1 text-sm font-bold text-white">Operations</span></div></header>
     <div className="mx-auto max-w-6xl px-5 py-8">
       {data.ownerAccountNeedsSecurity && <div className="mb-5"><StatusNote><ShieldCheck className="h-4 w-4" />Secure your owner account by confirming your email and setting a password. Your restaurant access is already active. <Link className="font-bold underline" href={`/staff?restaurantId=${restaurantId}`}>Finish account setup</Link></StatusNote></div>}
-      {message && <div className="mb-5"><StatusNote tone={message.includes("saved") || message.includes("added") || message.includes("assigned") || message.includes("uploaded") || message.includes("deleted") ? "success" : "error"}>{message}</StatusNote></div>}
+      {message && <div className="mb-5"><StatusNote tone={message.includes("saved") || message.includes("added") || message.includes("assigned") || message.includes("uploaded") || message.includes("deleted") || message.includes("updated") ? "success" : "error"}>{message}</StatusNote></div>}
       <div className="grid gap-6 lg:grid-cols-[1.25fr_.75fr]">
         <Card className="p-6">
           <div className="flex items-center gap-2"><Settings2 className="h-5 w-5 text-saffron" /><h1 className="display-font text-3xl">Restaurant settings</h1></div>
@@ -205,7 +230,11 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card className="p-6"><h2 className="display-font text-2xl">Menu studio</h2><div className="mt-5 grid gap-4 border-b border-orange-100 pb-5 sm:grid-cols-[1fr_auto]"><Input placeholder="New category, e.g. Burgers" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} /><Button variant="secondary" disabled={!categoryName} onClick={() => void createMenu("category")}><Plus className="h-4 w-4" />Category</Button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><select className="h-12 rounded-xl border border-stone-200 bg-white px-3" value={item.categoryId} onChange={(event) => setItem({ ...item, categoryId: event.target.value })}>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><Input placeholder="Item name" value={item.name} onChange={(event) => setItem({ ...item, name: event.target.value })} /><Input className="sm:col-span-2" placeholder="Short description" value={item.description} onChange={(event) => setItem({ ...item, description: event.target.value })} /><Input placeholder="Price in INR" type="number" min="0" value={item.price} onChange={(event) => setItem({ ...item, price: event.target.value })} /><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={item.vegetarian} onChange={(event) => setItem({ ...item, vegetarian: event.target.checked })} />Vegetarian</label><Button variant="secondary" disabled={!item.categoryId || !item.name || !item.price} onClick={() => void createMenu("item")}><Plus className="h-4 w-4" />Menu item</Button></div><div className="mt-6 space-y-3">{data.categories.map((category) => <MenuCategorySection key={category.id} category={category} expanded={expandedCategoryIds.has(category.id)} restaurantId={restaurantId} categories={data.categories} onToggle={() => toggleCategory(category.id)} onSaved={load} onMessage={setMessage} />)}</div></Card>
-        <Card className="p-6"><div className="flex items-center gap-2"><PackageCheck className="h-5 w-5 text-saffron" /><h2 className="display-font text-2xl">Live orders</h2></div><div className="mt-5 space-y-3">{data.orders.map((order) => <div className="rounded-2xl border border-orange-100 p-4" key={order.id}><div className="flex items-center justify-between"><span className="font-mono text-xs text-stone-500">#{order.id.slice(0, 8)}</span><span className="font-bold">{formatINR(Number(order.total))}</span></div><p className="mt-2 text-sm font-semibold capitalize">{String(order.status).replaceAll("_", " ")} · {order.payment_method}</p>{order.deliveryPhone && <p className="mt-2 text-sm text-stone-600">Delivery contact: <a className="font-semibold text-ink hover:underline" href={`tel:${order.deliveryPhone}`}>{order.deliveryPhone}</a></p>}{riders.length > 0 && <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-stone-500">Assign rider<select className="mt-1 h-9 w-full rounded-lg border border-stone-200 bg-white px-2 text-sm font-normal text-ink" defaultValue={order.delivery_assignments?.[0]?.rider_id ?? ""} onChange={(event) => void assignRider(order.id, event.target.value)}><option value="">Choose a rider</option>{riders.map((rider) => <option key={rider.user_id} value={rider.user_id}>{rider.profiles?.display_name || rider.profiles?.email || rider.user_id.slice(0, 8)}</option>)}</select></label>}<div className="mt-3 flex flex-wrap gap-2">{nextStatuses(order.status).map((status) => <Button size="sm" variant="secondary" key={status} onClick={() => void updateOrder(order.id, status)}>{status.replaceAll("_", " ")}</Button>)}</div></div>)}{!data.orders.length && <p className="text-sm text-stone-600">Orders will appear here as soon as customers check out.</p>}</div></Card>
+        <Card className="p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><PackageCheck className="h-5 w-5 text-saffron" /><h2 className="display-font text-2xl">Orders</h2></div><label className="flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-saffron" /><span className="sr-only">Order date</span><input type="date" max={todayInIndia()} value={orderDate} className="h-10 rounded-xl border border-stone-200 bg-white px-3" onChange={(event) => setOrderDate(event.target.value || todayInIndia())} /></label></div>
+          <div className="mt-4 grid gap-3 rounded-2xl bg-orange-50 p-4 sm:grid-cols-2"><div><p className="text-xs font-bold uppercase tracking-wide text-stone-500">Accepted orders</p><p className="mt-1 text-xl font-bold">{orderFeed?.summary.acceptedOrderCount ?? 0}</p></div><div><p className="text-xs font-bold uppercase tracking-wide text-stone-500">Gross sales</p><p className="mt-1 text-xl font-bold">{formatINR(orderFeed?.summary.acceptedGrossValue ?? 0)}</p></div></div>
+          <div className="mt-5 space-y-3">{orderFeed?.orders.map((order) => <div className="rounded-2xl border border-orange-100 p-4" key={order.id}><div className="flex items-center justify-between gap-3"><div><span className="font-mono text-xs text-stone-500">#{order.order_number}</span><p className="mt-1 text-xs text-stone-500">{new Date(order.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</p></div><span className="font-bold">{formatINR(Number(order.total))}</span></div><p className="mt-3 text-sm font-semibold">{orderStatusLabels[order.status as keyof typeof orderStatusLabels] ?? String(order.status).replaceAll("_", " ")} · {order.payment_method === "cod" ? "COD" : "Online"}</p>{order.deliveryPhone && <p className="mt-2 text-sm text-stone-600">Delivery contact: <a className="font-semibold text-ink hover:underline" href={`tel:${order.deliveryPhone}`}>{order.deliveryPhone}</a></p>}{order.status === "confirmed" && order.preparation_minutes && <p className="mt-2 text-sm text-stone-600">Preparation time: {order.preparation_minutes} min</p>}{riders.length > 0 && !["pending_payment", "delivered", "cancelled"].includes(order.status) && <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-stone-500">Assign rider<select className="mt-1 h-9 w-full rounded-lg border border-stone-200 bg-white px-2 text-sm font-normal text-ink" value={order.delivery_assignments?.[0]?.rider_id ?? ""} onChange={(event) => void assignRider(order.id, event.target.value)}><option value="">Choose a rider</option>{riders.map((rider) => <option key={rider.user_id} value={rider.user_id}>{rider.profiles?.display_name || rider.profiles?.email || rider.user_id.slice(0, 8)}</option>)}</select></label>}{order.status === "pending_approval" && <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-stone-500">Preparation time (minutes)<Input className="mt-1 h-9" type="number" min="1" max="240" value={preparationMinutesByOrder[order.id] ?? "30"} onChange={(event) => setPreparationMinutesByOrder((current) => ({ ...current, [order.id]: event.target.value }))} /></label>}<div className="mt-3 flex flex-wrap gap-2">{allowedOrderActions(order.status).map((action) => <Button size="sm" variant={action.status === "cancelled" ? "danger" : "secondary"} key={action.status} onClick={() => void updateOrder(order.id, action.status)}>{action.label}</Button>)}</div></div>)}{!orderFeed?.orders.length && <p className="text-sm text-stone-600">No orders were placed on this date.</p>}{orderFeed?.nextCursor && <Button className="w-full" variant="secondary" disabled={loadingMoreOrders} onClick={() => { setLoadingMoreOrders(true); void loadOrders({ append: true, cursor: orderFeed.nextCursor }).catch((error) => setMessage(error instanceof Error ? error.message : "More orders could not be loaded.")).finally(() => setLoadingMoreOrders(false)); }}>{loadingMoreOrders && <LoaderCircle className="h-4 w-4 animate-spin" />}See more orders</Button>}</div>
+        </Card>
       </div>
     </div>
   </main>;
@@ -278,8 +307,4 @@ function MenuItemEditor({ restaurantId, item, categories, onSaved, onMessage }: 
   }
 
   return <form className="rounded-xl border border-orange-100 p-3" onSubmit={(event) => void save(event)}><div className="grid gap-4 md:grid-cols-2"><div className="min-w-0"><input ref={photoInputRef} className="sr-only" aria-label={`Choose photo for ${item.name}`} type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto} /><button type="button" className="group relative block aspect-[4/3] w-full overflow-hidden rounded-xl bg-orange-50 text-orange-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-saffron focus-visible:ring-offset-2 disabled:cursor-wait" onClick={() => photoInputRef.current?.click()} disabled={saving} aria-label={`Choose photo for ${item.name}`}>{item.image_url ? <img src={item.image_url} alt={`Photo of ${item.name}`} className="h-full w-full object-cover" /> : <span className="grid h-full place-items-center"><ImagePlus className="h-10 w-10" /></span>}<span className="absolute inset-0 grid place-items-center bg-ink/0 transition group-hover:bg-ink/35"><span className="inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 text-sm font-semibold text-ink opacity-0 shadow transition group-hover:opacity-100 group-focus-visible:opacity-100">{saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{saving ? "Uploading…" : "Change photo"}</span></span></button><p className="mt-2 text-xs text-stone-500">Click the photo to upload a JPEG, PNG, or WebP up to 5 MB.</p></div><div className="min-w-0"><div className="grid gap-2 sm:grid-cols-2"><Input aria-label="Item name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /><Input aria-label="Item price" type="number" min="0" step="0.01" value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} /><select aria-label="Item category" className="h-10 rounded-xl border border-stone-200 bg-white px-3" value={draft.categoryId} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><Input aria-label="Item description" placeholder="Description" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></div><div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-semibold"><label className="flex items-center gap-2"><input type="checkbox" checked={draft.vegetarian} onChange={(event) => setDraft({ ...draft, vegetarian: event.target.checked })} />Vegetarian</label><label className="flex items-center gap-2"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />Visible to customers</label><Button type="submit" size="sm" disabled={saving}>{saving && <LoaderCircle className="h-4 w-4 animate-spin" />}Save</Button><Button type="button" size="sm" variant="danger" disabled={saving} onClick={() => void deleteItem()}><Trash2 className="h-4 w-4" />Delete</Button></div></div></div></form>;
-}
-
-function nextStatuses(status: string) {
-  return ({ pending_approval: ["confirmed", "cancelled"], confirmed: ["preparing", "cancelled"], preparing: ["out_for_delivery", "cancelled"], out_for_delivery: ["delivered"], pending_payment: [], delivered: [], cancelled: [] } as Record<string, string[]>)[status] ?? [];
 }

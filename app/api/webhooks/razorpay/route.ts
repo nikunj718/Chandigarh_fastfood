@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     if (eventError) throw eventError;
 
     if (payload.event === "payment.captured" && payment.id) {
-      const { error } = await admin.from("orders").update({ status: "confirmed", payment_status: "paid", razorpay_payment_id: payment.id }).eq("id", order.id).eq("payment_status", "pending");
+      const { error } = await admin.from("orders").update({ status: "pending_approval", payment_status: "paid", razorpay_payment_id: payment.id }).eq("id", order.id).eq("payment_status", "pending");
       if (error) throw error;
     }
     if (payload.event === "payment.failed") {
