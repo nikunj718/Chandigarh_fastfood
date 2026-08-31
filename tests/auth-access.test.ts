@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { authCallbackUrl, cleanReturnPath, returnPathFromRequest, safeNextPath, safeReturnPath, signInUrl } from "@/lib/auth-redirect";
 import { isVerifiedUser } from "@/lib/identity";
-import { managementDestination } from "@/lib/session-routing";
+import { hasRestaurantOwnerAccess, managementDestination } from "@/lib/session-routing";
 
 describe("authentication redirect safety", () => {
   it("keeps only same-origin application paths", () => {
@@ -35,6 +35,11 @@ describe("post-auth session landing", () => {
 
   it("opens the management picker for multiple restaurants", () => {
     expect(managementDestination([{ id: "restaurant-1" }, { id: "restaurant-2" }])).toBe("/admin");
+  });
+
+  it("shows customer header operations access to owners only", () => {
+    expect(hasRestaurantOwnerAccess([{ role: "owner" }])).toBe(true);
+    expect(hasRestaurantOwnerAccess([{ role: "manager" }, { role: "rider" }])).toBe(false);
   });
 });
 

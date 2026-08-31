@@ -30,6 +30,10 @@ export function managementDestination(restaurants: Pick<ManagedRestaurant, "id">
   return "/admin";
 }
 
+export function hasRestaurantOwnerAccess(memberships: Array<{ role: string }>) {
+  return memberships.some((membership) => membership.role === "owner");
+}
+
 export async function getManagedRestaurants(supabase: SupabaseClient, userId: string): Promise<ManagedRestaurant[]> {
   const { data, error } = await supabase
     .from("restaurant_memberships")

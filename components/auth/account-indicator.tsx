@@ -11,7 +11,12 @@ import { signInUrl } from "@/lib/auth-redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCartStore } from "@/store/useCartStore";
 
-export type CustomerAccount = { email: string; displayName: string | null; defaultDeliveryPhone: string | null };
+export type CustomerAccount = {
+  email: string;
+  displayName: string | null;
+  defaultDeliveryPhone: string | null;
+  isRestaurantOwner: boolean;
+};
 
 export function AccountIndicator({ nextPath, onAccountChange }: { nextPath: string; onAccountChange?: (account: CustomerAccount | null) => void }) {
   const router = useRouter();

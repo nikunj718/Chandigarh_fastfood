@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { CreditCard, ImagePlus, LoaderCircle, PackageCheck, Plus, Settings2, ShieldCheck, UsersRound } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, CreditCard, ImagePlus, LoaderCircle, PackageCheck, Plus, Settings2, ShieldCheck, UsersRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { StoreLocationPicker } from "@/components/maps/store-location-picker";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,6 +32,7 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
   const [team, setTeam] = useState({ email: "", role: "rider" });
   const [operatingHours, setOperatingHours] = useState<OperatingHour[]>(defaultOperatingHours());
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(() => new Set());
 
   async function load() {
     const response = await fetch(`/api/admin/restaurants/${restaurantId}`);
@@ -96,6 +97,15 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
 
   function updateHours(dayOfWeek: number, update: Partial<OperatingHour>) {
     setOperatingHours((hours) => hours.map((hour) => hour.dayOfWeek !== dayOfWeek ? hour : { ...hour, ...update }));
+  }
+
+  function toggleCategory(categoryId: string) {
+    setExpandedCategoryIds((current) => {
+      const next = new Set(current);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return next;
+    });
   }
 
   async function createMenu(kind: "category" | "item") {
@@ -166,17 +176,32 @@ export function AdminDashboard({ restaurantId }: { restaurantId: string }) {
         <Card className="p-6"><div className="flex items-center gap-2"><UsersRound className="h-5 w-5 text-saffron" /><h2 className="display-font text-2xl">Team access</h2></div><p className="mt-2 text-sm text-stone-600">Members must create and confirm a staff email account before being added.</p><form className="mt-5 space-y-3" onSubmit={(event) => void addMember(event)}><Input type="email" placeholder="Rider/manager email" value={team.email} onChange={(event) => setTeam({ ...team, email: event.target.value })} /><select className="h-11 w-full rounded-xl border border-stone-200 bg-white px-3" value={team.role} onChange={(event) => setTeam({ ...team, role: event.target.value })}><option value="rider">Rider</option><option value="manager">Manager</option></select><Button size="sm" type="submit"><Plus className="h-4 w-4" />Add team member</Button></form><div className="mt-5 space-y-2">{data.members.map((member) => <div className="flex items-center justify-between rounded-xl bg-orange-50 px-3 py-2 text-sm" key={member.user_id}><span>{member.profiles?.display_name || member.profiles?.email || member.user_id.slice(0, 8)}</span><span className="font-bold capitalize text-saffron">{member.role}</span></div>)}</div></Card>
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card className="p-6"><h2 className="display-font text-2xl">Menu studio</h2><div className="mt-5 grid gap-4 border-b border-orange-100 pb-5 sm:grid-cols-[1fr_auto]"><Input placeholder="New category, e.g. Burgers" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} /><Button variant="secondary" disabled={!categoryName} onClick={() => void createMenu("category")}><Plus className="h-4 w-4" />Category</Button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><select className="h-12 rounded-xl border border-stone-200 bg-white px-3" value={item.categoryId} onChange={(event) => setItem({ ...item, categoryId: event.target.value })}>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><Input placeholder="Item name" value={item.name} onChange={(event) => setItem({ ...item, name: event.target.value })} /><Input className="sm:col-span-2" placeholder="Short description" value={item.description} onChange={(event) => setItem({ ...item, description: event.target.value })} /><Input placeholder="Price in INR" type="number" min="0" value={item.price} onChange={(event) => setItem({ ...item, price: event.target.value })} /><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={item.vegetarian} onChange={(event) => setItem({ ...item, vegetarian: event.target.checked })} />Vegetarian</label><Button variant="secondary" disabled={!item.categoryId || !item.name || !item.price} onClick={() => void createMenu("item")}><Plus className="h-4 w-4" />Menu item</Button></div><div className="mt-6 space-y-4">{data.categories.map((category) => <section key={category.id}><p className="font-bold">{category.name}</p><div className="mt-2 grid gap-3">{(category.menu_items ?? []).map((menuItem) => <MenuItemEditor key={menuItem.id} restaurantId={restaurantId} item={menuItem} categories={data.categories} onSaved={load} onMessage={setMessage} />)}</div></section>)}</div></Card>
+        <Card className="p-6"><h2 className="display-font text-2xl">Menu studio</h2><div className="mt-5 grid gap-4 border-b border-orange-100 pb-5 sm:grid-cols-[1fr_auto]"><Input placeholder="New category, e.g. Burgers" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} /><Button variant="secondary" disabled={!categoryName} onClick={() => void createMenu("category")}><Plus className="h-4 w-4" />Category</Button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><select className="h-12 rounded-xl border border-stone-200 bg-white px-3" value={item.categoryId} onChange={(event) => setItem({ ...item, categoryId: event.target.value })}>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><Input placeholder="Item name" value={item.name} onChange={(event) => setItem({ ...item, name: event.target.value })} /><Input className="sm:col-span-2" placeholder="Short description" value={item.description} onChange={(event) => setItem({ ...item, description: event.target.value })} /><Input placeholder="Price in INR" type="number" min="0" value={item.price} onChange={(event) => setItem({ ...item, price: event.target.value })} /><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={item.vegetarian} onChange={(event) => setItem({ ...item, vegetarian: event.target.checked })} />Vegetarian</label><Button variant="secondary" disabled={!item.categoryId || !item.name || !item.price} onClick={() => void createMenu("item")}><Plus className="h-4 w-4" />Menu item</Button></div><div className="mt-6 space-y-3">{data.categories.map((category) => <MenuCategorySection key={category.id} category={category} expanded={expandedCategoryIds.has(category.id)} restaurantId={restaurantId} categories={data.categories} onToggle={() => toggleCategory(category.id)} onSaved={load} onMessage={setMessage} />)}</div></Card>
         <Card className="p-6"><div className="flex items-center gap-2"><PackageCheck className="h-5 w-5 text-saffron" /><h2 className="display-font text-2xl">Live orders</h2></div><div className="mt-5 space-y-3">{data.orders.map((order) => <div className="rounded-2xl border border-orange-100 p-4" key={order.id}><div className="flex items-center justify-between"><span className="font-mono text-xs text-stone-500">#{order.id.slice(0, 8)}</span><span className="font-bold">{formatINR(Number(order.total))}</span></div><p className="mt-2 text-sm font-semibold capitalize">{String(order.status).replaceAll("_", " ")} · {order.payment_method}</p>{order.deliveryPhone && <p className="mt-2 text-sm text-stone-600">Delivery contact: <a className="font-semibold text-ink hover:underline" href={`tel:${order.deliveryPhone}`}>{order.deliveryPhone}</a></p>}{riders.length > 0 && <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-stone-500">Assign rider<select className="mt-1 h-9 w-full rounded-lg border border-stone-200 bg-white px-2 text-sm font-normal text-ink" defaultValue={order.delivery_assignments?.[0]?.rider_id ?? ""} onChange={(event) => void assignRider(order.id, event.target.value)}><option value="">Choose a rider</option>{riders.map((rider) => <option key={rider.user_id} value={rider.user_id}>{rider.profiles?.display_name || rider.profiles?.email || rider.user_id.slice(0, 8)}</option>)}</select></label>}<div className="mt-3 flex flex-wrap gap-2">{nextStatuses(order.status).map((status) => <Button size="sm" variant="secondary" key={status} onClick={() => void updateOrder(order.id, status)}>{status.replaceAll("_", " ")}</Button>)}</div></div>)}{!data.orders.length && <p className="text-sm text-stone-600">Orders will appear here as soon as customers check out.</p>}</div></Card>
       </div>
     </div>
   </main>;
 }
 
+function MenuCategorySection({ category, expanded, restaurantId, categories, onToggle, onSaved, onMessage }: { category: AdminCategory; expanded: boolean; restaurantId: string; categories: AdminCategory[]; onToggle: () => void; onSaved: () => Promise<void>; onMessage: (message: string) => void }) {
+  const itemCount = category.menu_items?.length ?? 0;
+  const contentId = `menu-category-${category.id}`;
+
+  return <section className="overflow-hidden rounded-2xl border border-orange-100 bg-white">
+    <button type="button" className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-saffron" aria-expanded={expanded} aria-controls={contentId} onClick={onToggle}>
+      <span className="min-w-0"><span className="block truncate font-bold text-ink">{category.name}</span><span className="mt-1 block text-xs text-stone-500">{itemCount} {itemCount === 1 ? "dish" : "dishes"}</span></span>
+      {expanded ? <ChevronDown className="h-5 w-5 shrink-0 text-saffron" aria-hidden="true" /> : <ChevronRight className="h-5 w-5 shrink-0 text-saffron" aria-hidden="true" />}
+    </button>
+    {expanded && <div id={contentId} className="border-t border-orange-100 p-3">
+      {itemCount ? <div className="grid gap-3">{category.menu_items?.map((menuItem) => <MenuItemEditor key={menuItem.id} restaurantId={restaurantId} item={menuItem} categories={categories} onSaved={onSaved} onMessage={onMessage} />)}</div> : <p className="rounded-xl bg-orange-50 px-3 py-4 text-sm text-stone-600">No dishes in this category yet. Add one above to start building the menu.</p>}
+    </div>}
+  </section>;
+}
+
 function MenuItemEditor({ restaurantId, item, categories, onSaved, onMessage }: { restaurantId: string; item: MenuItem; categories: AdminCategory[]; onSaved: () => Promise<void>; onMessage: (message: string) => void }) {
   const [draft, setDraft] = useState({ categoryId: item.category_id, name: item.name, description: item.description ?? "", price: String(item.price), vegetarian: item.vegetarian, active: item.active });
   const [saving, setSaving] = useState(false);
-  const [photo, setPhoto] = useState<File | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -191,8 +216,7 @@ function MenuItemEditor({ restaurantId, item, categories, onSaved, onMessage }: 
     finally { setSaving(false); }
   }
 
-  async function uploadPhoto() {
-    if (!photo) return;
+  async function uploadPhoto(photo: File) {
     setSaving(true);
     try {
       const form = new FormData();
@@ -200,14 +224,19 @@ function MenuItemEditor({ restaurantId, item, categories, onSaved, onMessage }: 
       const response = await fetch(`/api/admin/restaurants/${restaurantId}/menu/${item.id}/photo`, { method: "POST", body: form });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Food photo could not be uploaded.");
-      setPhoto(null);
       await onSaved();
       onMessage("Food photo uploaded.");
     } catch (error) { onMessage(error instanceof Error ? error.message : "Food photo could not be uploaded."); }
     finally { setSaving(false); }
   }
 
-  return <form className="rounded-2xl border border-orange-100 p-4" onSubmit={(event) => void save(event)}><div className="flex flex-wrap gap-3"><div className="h-16 w-16 overflow-hidden rounded-xl bg-orange-50">{item.image_url ? <img src={item.image_url} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-orange-300"><ImagePlus className="h-5 w-5" /></div>}</div><div className="min-w-0 flex-1"><div className="grid gap-2 sm:grid-cols-2"><Input aria-label="Item name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /><Input aria-label="Item price" type="number" min="0" step="0.01" value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} /><select aria-label="Item category" className="h-10 rounded-xl border border-stone-200 bg-white px-3" value={draft.categoryId} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><Input aria-label="Item description" placeholder="Description" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></div><div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-semibold"><label className="flex items-center gap-2"><input type="checkbox" checked={draft.vegetarian} onChange={(event) => setDraft({ ...draft, vegetarian: event.target.checked })} />Vegetarian</label><label className="flex items-center gap-2"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />Visible to customers</label><Button type="submit" size="sm" disabled={saving}>{saving && <LoaderCircle className="h-4 w-4 animate-spin" />}Save</Button></div></div></div><div className="mt-3 flex flex-wrap items-center gap-2"><Input aria-label="Food photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setPhoto(event.target.files?.[0] ?? null)} /><Button type="button" size="sm" variant="secondary" disabled={!photo || saving} onClick={() => void uploadPhoto()}><ImagePlus className="h-4 w-4" />Upload photo</Button><span className="text-xs text-stone-500">JPEG, PNG, or WebP up to 5 MB</span></div></form>;
+  function choosePhoto(event: React.ChangeEvent<HTMLInputElement>) {
+    const photo = event.target.files?.[0];
+    event.target.value = "";
+    if (photo) void uploadPhoto(photo);
+  }
+
+  return <form className="rounded-xl border border-orange-100 p-3" onSubmit={(event) => void save(event)}><div className="grid gap-4 md:grid-cols-2"><div className="min-w-0"><input ref={photoInputRef} className="sr-only" aria-label={`Choose photo for ${item.name}`} type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto} /><button type="button" className="group relative block aspect-[4/3] w-full overflow-hidden rounded-xl bg-orange-50 text-orange-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-saffron focus-visible:ring-offset-2 disabled:cursor-wait" onClick={() => photoInputRef.current?.click()} disabled={saving} aria-label={`Choose photo for ${item.name}`}>{item.image_url ? <img src={item.image_url} alt={`Photo of ${item.name}`} className="h-full w-full object-cover" /> : <span className="grid h-full place-items-center"><ImagePlus className="h-10 w-10" /></span>}<span className="absolute inset-0 grid place-items-center bg-ink/0 transition group-hover:bg-ink/35"><span className="inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 text-sm font-semibold text-ink opacity-0 shadow transition group-hover:opacity-100 group-focus-visible:opacity-100">{saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{saving ? "Uploading…" : "Change photo"}</span></span></button><p className="mt-2 text-xs text-stone-500">Click the photo to upload a JPEG, PNG, or WebP up to 5 MB.</p></div><div className="min-w-0"><div className="grid gap-2 sm:grid-cols-2"><Input aria-label="Item name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /><Input aria-label="Item price" type="number" min="0" step="0.01" value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} /><select aria-label="Item category" className="h-10 rounded-xl border border-stone-200 bg-white px-3" value={draft.categoryId} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><Input aria-label="Item description" placeholder="Description" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></div><div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-semibold"><label className="flex items-center gap-2"><input type="checkbox" checked={draft.vegetarian} onChange={(event) => setDraft({ ...draft, vegetarian: event.target.checked })} />Vegetarian</label><label className="flex items-center gap-2"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />Visible to customers</label><Button type="submit" size="sm" disabled={saving}>{saving && <LoaderCircle className="h-4 w-4 animate-spin" />}Save</Button></div></div></div></form>;
 }
 
 function nextStatuses(status: string) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError, requireUser } from "@/lib/auth";
 import { CustomerContactError, decryptCustomerContact, encryptCustomerContact } from "@/lib/customer-contact";
+import { hasRestaurantOwnerAccess } from "@/lib/session-routing";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { normalizeIndianPhone } from "@/lib/utils";
 
@@ -10,16 +11,27 @@ const contactSchema = z.object({ deliveryPhone: z.string().trim().min(1).max(30)
 export async function GET() {
   try {
     const { supabase, user } = await requireUser();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("email,display_name,default_delivery_phone_ciphertext")
-      .eq("id", user.id)
-      .single();
-    if (error) throw error;
+    const [profileResult, ownerMembershipResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("email,display_name,default_delivery_phone_ciphertext")
+        .eq("id", user.id)
+        .single(),
+      supabase
+        .from("restaurant_memberships")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "owner")
+        .limit(1),
+    ]);
+    if (profileResult.error) throw profileResult.error;
+    if (ownerMembershipResult.error) throw ownerMembershipResult.error;
+    const data = profileResult.data;
     return NextResponse.json({
       email: data?.email ?? user.email,
       displayName: data?.display_name ?? null,
       defaultDeliveryPhone: data?.default_delivery_phone_ciphertext ? decryptCustomerContact(data.default_delivery_phone_ciphertext) : null,
+      isRestaurantOwner: hasRestaurantOwnerAccess(ownerMembershipResult.data ?? []),
     });
   } catch (error) {
     if (error instanceof CustomerContactError) return NextResponse.json({ error: "Your saved delivery contact is unavailable. Enter it again at checkout." }, { status: 503 });
