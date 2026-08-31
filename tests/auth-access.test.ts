@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { authCallbackUrl, cleanReturnPath, returnPathFromRequest, safeNextPath, safeReturnPath, signInUrl } from "@/lib/auth-redirect";
 import { isVerifiedUser } from "@/lib/identity";
-import { hasRestaurantOwnerAccess, managementDestination } from "@/lib/session-routing";
+import { hasRestaurantOwnerAccess, managedRestaurantsFromMemberships, managementDestination } from "@/lib/session-routing";
 
 describe("authentication redirect safety", () => {
   it("keeps only same-origin application paths", () => {
@@ -40,6 +40,34 @@ describe("post-auth session landing", () => {
   it("shows customer header operations access to owners only", () => {
     expect(hasRestaurantOwnerAccess([{ role: "owner" }])).toBe(true);
     expect(hasRestaurantOwnerAccess([{ role: "manager" }, { role: "rider" }])).toBe(false);
+  });
+
+  it("keeps the restaurant returned for an owner membership in either embed shape", () => {
+    const restaurant = { id: "restaurant-1", name: "Nikunj's Kitchen", slug: "nikunjs-kitchen", address_text: "Hisar", active: true };
+
+    expect(managedRestaurantsFromMemberships([{
+      restaurant_id: "restaurant-1",
+      role: "owner",
+      restaurants: restaurant,
+    }, {
+      restaurant_id: "restaurant-1",
+      role: "manager",
+      restaurants: [restaurant],
+    }])).toEqual([{
+      id: "restaurant-1",
+      name: "Nikunj's Kitchen",
+      slug: "nikunjs-kitchen",
+      addressText: "Hisar",
+      active: true,
+      role: "owner",
+    }, {
+      id: "restaurant-1",
+      name: "Nikunj's Kitchen",
+      slug: "nikunjs-kitchen",
+      addressText: "Hisar",
+      active: true,
+      role: "manager",
+    }]);
   });
 });
 

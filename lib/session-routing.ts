@@ -12,16 +12,18 @@ export type ManagedRestaurant = {
   role: "owner" | "manager";
 };
 
+type ManagedRestaurantRow = {
+  id: string;
+  name: string;
+  slug: string;
+  address_text: string | null;
+  active: boolean;
+};
+
 type MembershipRow = {
   restaurant_id: string;
   role: "owner" | "manager";
-  restaurants: {
-    id: string;
-    name: string;
-    slug: string;
-    address_text: string | null;
-    active: boolean;
-  }[] | null;
+  restaurants: ManagedRestaurantRow | ManagedRestaurantRow[] | null;
 };
 
 export function managementDestination(restaurants: Pick<ManagedRestaurant, "id">[]) {
@@ -34,6 +36,22 @@ export function hasRestaurantOwnerAccess(memberships: Array<{ role: string }>) {
   return memberships.some((membership) => membership.role === "owner");
 }
 
+export function managedRestaurantsFromMemberships(memberships: MembershipRow[]): ManagedRestaurant[] {
+  return memberships.flatMap((membership) => {
+    const restaurant = Array.isArray(membership.restaurants)
+      ? membership.restaurants[0]
+      : membership.restaurants;
+    return restaurant ? [{
+      id: restaurant.id,
+      name: restaurant.name,
+      slug: restaurant.slug,
+      addressText: restaurant.address_text,
+      active: restaurant.active,
+      role: membership.role,
+    }] : [];
+  });
+}
+
 export async function getManagedRestaurants(supabase: SupabaseClient, userId: string): Promise<ManagedRestaurant[]> {
   const { data, error } = await supabase
     .from("restaurant_memberships")
@@ -43,18 +61,7 @@ export async function getManagedRestaurants(supabase: SupabaseClient, userId: st
     .order("created_at", { ascending: false });
   if (error) throw error;
 
-  return ((data ?? []) as MembershipRow[])
-    .flatMap((membership) => {
-      const restaurant = membership.restaurants?.[0];
-      return restaurant ? [{
-        id: restaurant.id,
-        name: restaurant.name,
-        slug: restaurant.slug,
-        addressText: restaurant.address_text,
-        active: restaurant.active,
-        role: membership.role,
-      }] : [];
-    });
+  return managedRestaurantsFromMemberships(data ?? []);
 }
 
 export async function getAuthenticatedLandingForUser(supabase: SupabaseClient, user: User) {
