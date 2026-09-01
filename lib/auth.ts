@@ -56,3 +56,17 @@ export async function requireRestaurantManager(restaurantId: string) {
   if (repairedMembershipError) throw repairedMembershipError;
   return { supabase, user, membership: repairedMembership };
 }
+
+export async function requireRider() {
+  const { supabase, user } = await requireUser();
+  const { data, error } = await supabase
+    .from("restaurant_memberships")
+    .select("restaurant_id")
+    .eq("user_id", user.id)
+    .eq("role", "rider")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("FORBIDDEN");
+  return { supabase, user };
+}

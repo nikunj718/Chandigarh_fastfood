@@ -40,6 +40,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
     };
     const { data, error } = await admin.from("orders").update({ status, ...timelinePayload }).eq("id", orderId).select("id,status,preparation_minutes,confirmed_at,preparing_at,prepared_at,out_for_delivery_at,delivered_at,cancelled_at").single();
     if (error) throw error;
+    if (status === "delivered" || status === "cancelled") {
+      const { error: activeStopError } = await admin.from("rider_active_stops").delete().eq("order_id", orderId);
+      if (activeStopError) throw activeStopError;
+    }
     return NextResponse.json(data);
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Invalid order status." }, { status: 400 });

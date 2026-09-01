@@ -20,6 +20,8 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ ord
     if (!rider) return NextResponse.json({ error: "That rider is not available for this restaurant." }, { status: 400 });
     const { data, error } = await admin.from("delivery_assignments").upsert({ order_id: orderId, restaurant_id: order.restaurant_id, rider_id: riderId, assigned_by: user.id }, { onConflict: "order_id" }).select("*").single();
     if (error) throw error;
+    const { error: activeStopError } = await admin.from("rider_active_stops").delete().eq("order_id", orderId).neq("rider_id", riderId);
+    if (activeStopError) throw activeStopError;
     return NextResponse.json(data);
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Invalid rider." }, { status: 400 });
