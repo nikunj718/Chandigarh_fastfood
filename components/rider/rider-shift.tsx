@@ -1,10 +1,11 @@
 "use client";
 
-import { LocateFixed, MapPin, Navigation, Phone, Radio, RefreshCw, ShieldAlert, WifiOff } from "lucide-react";
+import { CheckCircle2, ExternalLink, LocateFixed, MapPin, Navigation, Phone, Radio, RefreshCw, ShieldAlert, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusNote } from "@/components/ui/status-note";
+import { riderMapsUrl, riderPhoneHref } from "@/lib/rider-actions";
 
 type Assignment = {
   order_id: string;
@@ -33,6 +34,7 @@ export function RiderShift() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [tracking, setTracking] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [completingOrderId, setCompletingOrderId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const locationInterval = useRef<number | null>(null);
 
@@ -91,6 +93,24 @@ export function RiderShift() {
     await loadAssignments();
   }
 
+  async function markDelivered(orderId: string) {
+    if (!window.confirm("Mark this current delivery as delivered? This cannot be undone.")) return;
+    setCompletingOrderId(orderId);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/rider/assignments/${orderId}/deliver`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Delivery could not be marked as delivered.");
+      setAssignments((current) => current.filter((assignment) => assignment.order_id !== orderId));
+      setNotice("Delivery marked as delivered. Choose your next stop when you are ready.");
+      await loadAssignments();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Delivery could not be marked as delivered.");
+    } finally {
+      setCompletingOrderId(null);
+    }
+  }
+
   async function refresh() {
     setLoading(true);
     try { await loadAssignments(); setNotice(null); }
@@ -98,5 +118,5 @@ export function RiderShift() {
     finally { setLoading(false); }
   }
 
-  return <main className="min-h-screen bg-cream px-5 py-8"><section className="mx-auto max-w-3xl"><header className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-saffron">Rider portal</p><h1 className="display-font mt-2 text-4xl">Today’s deliveries</h1><p className="mt-3 max-w-xl text-stone-600">Choose the stop you are delivering now, then enable location to update every dispatched customer from this device.</p></div><Button variant="secondary" disabled={loading} onClick={() => void refresh()}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button></header>{notice && <div className="mt-5"><StatusNote tone={notice.includes("denied") || notice.includes("could not") || notice.includes("too low") ? "error" : "info"}>{notice}</StatusNote></div>}<Card className="mt-6 p-5"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-bold">Live location</p><p className="mt-1 text-sm text-stone-600">Shares an accuracy-checked GPS point every 30 seconds while this page stays open.</p></div>{tracking ? <Button variant="danger" onClick={disableLocation}><WifiOff className="h-4 w-4" />Disable location</Button> : <Button disabled={!dispatchedAssignments.length} onClick={enableLocation}><Radio className="h-4 w-4" />Enable location</Button>}</div></Card><div className="mt-6 grid gap-4">{assignments.map((assignment) => <Card className={`p-5 ${assignment.queueState === "current" ? "border-saffron ring-2 ring-orange-100" : ""}`} key={assignment.order_id}><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-mono text-xs text-stone-500">Order #{assignment.orders.order_number ?? assignment.order_id.slice(0, 8)}</p><h2 className="mt-1 text-lg font-bold">{assignment.orders.restaurant_snapshot.name}</h2></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${assignment.queueState === "current" ? "bg-orange-100 text-saffron" : "bg-stone-100 text-stone-700"}`}>{queueLabels[assignment.queueState]}</span></div><div className="mt-4 grid gap-3 text-sm"><p className="flex gap-2 text-stone-700"><MapPin className="h-4 w-4 shrink-0 text-moss" />{assignment.orders.customer_address_snapshot.address_text}</p>{assignment.orders.deliveryPhone && <p className="flex gap-2 text-stone-700"><Phone className="h-4 w-4 shrink-0 text-saffron" /><a className="font-semibold hover:underline" href={`tel:${assignment.orders.deliveryPhone}`}>{assignment.orders.deliveryPhone}</a></p>}</div><div className="mt-5 flex flex-wrap gap-2">{assignment.orders.status === "out_for_delivery" && assignment.queueState !== "current" && <Button size="sm" variant="secondary" onClick={() => void makeCurrentStop(assignment.order_id)}><Navigation className="h-4 w-4" />Make current stop</Button>}{assignment.orders.status === "out_for_delivery" && assignment.queueState === "current" && <Button size="sm" variant="secondary" disabled><LocateFixed className="h-4 w-4" />Current stop</Button>}</div></Card>)}{!loading && !assignments.length && <Card className="p-7"><StatusNote>No active rider assignment yet. A restaurant owner will assign your deliveries here.</StatusNote></Card>}</div><div className="mt-6 flex gap-3 rounded-2xl bg-orange-50 p-4 text-sm text-orange-900"><ShieldAlert className="h-5 w-5 shrink-0 text-saffron" /><p><strong>Keep this page open.</strong> Mobile browsers may suspend GPS in the background, so riders should keep the Rider Portal visible during active deliveries.</p></div></section></main>;
+  return <main className="min-h-screen bg-cream px-5 py-8"><section className="mx-auto max-w-3xl"><header className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-saffron">Rider portal</p><h1 className="display-font mt-2 text-4xl">Today’s deliveries</h1><p className="mt-3 max-w-xl text-stone-600">Choose the stop you are delivering now, then enable location to update every dispatched customer from this device.</p></div><Button variant="secondary" disabled={loading} onClick={() => void refresh()}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button></header>{notice && <div className="mt-5"><StatusNote tone={notice.includes("denied") || notice.includes("could not") || notice.includes("too low") ? "error" : "info"}>{notice}</StatusNote></div>}<Card className="mt-6 p-5"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-bold">Live location</p><p className="mt-1 text-sm text-stone-600">Shares an accuracy-checked GPS point every 30 seconds while this page stays open.</p></div>{tracking ? <Button variant="danger" onClick={disableLocation}><WifiOff className="h-4 w-4" />Disable location</Button> : <Button disabled={!dispatchedAssignments.length} onClick={enableLocation}><Radio className="h-4 w-4" />Enable location</Button>}</div></Card><div className="mt-6 grid gap-4">{assignments.map((assignment) => <Card className={`p-5 ${assignment.queueState === "current" ? "border-saffron ring-2 ring-orange-100" : ""}`} key={assignment.order_id}><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-mono text-xs text-stone-500">Order #{assignment.orders.order_number ?? assignment.order_id.slice(0, 8)}</p><h2 className="mt-1 text-lg font-bold">{assignment.orders.restaurant_snapshot.name}</h2></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${assignment.queueState === "current" ? "bg-orange-100 text-saffron" : "bg-stone-100 text-stone-700"}`}>{queueLabels[assignment.queueState]}</span></div><div className="mt-4 grid gap-3 text-sm"><p className="flex gap-2 text-stone-700"><MapPin className="h-4 w-4 shrink-0 text-moss" />{assignment.orders.customer_address_snapshot.address_text}</p>{assignment.orders.deliveryPhone && <p className="flex gap-2 text-stone-700"><Phone className="h-4 w-4 shrink-0 text-saffron" /><a className="font-semibold hover:underline" href={riderPhoneHref(assignment.orders.deliveryPhone)}>{assignment.orders.deliveryPhone}</a></p>}</div><div className="mt-5 flex flex-wrap gap-2">{assignment.orders.status === "out_for_delivery" && <a className="inline-flex h-9 items-center justify-center gap-2 rounded-full bg-orange-100 px-4 text-sm font-semibold text-ink transition hover:bg-orange-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-saffron focus-visible:ring-offset-2" href={riderMapsUrl(assignment.orders.customer_address_snapshot.latitude, assignment.orders.customer_address_snapshot.longitude)} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" />Open in Maps</a>}{assignment.orders.status === "out_for_delivery" && assignment.queueState !== "current" && <Button size="sm" variant="secondary" onClick={() => void makeCurrentStop(assignment.order_id)}><Navigation className="h-4 w-4" />Make current stop</Button>}{assignment.orders.status === "out_for_delivery" && assignment.queueState === "current" && <><Button size="sm" variant="secondary" disabled><LocateFixed className="h-4 w-4" />Current stop</Button><Button size="sm" variant="danger" disabled={completingOrderId === assignment.order_id} onClick={() => void markDelivered(assignment.order_id)}>{completingOrderId === assignment.order_id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Mark delivered</Button></>}</div></Card>)}{!loading && !assignments.length && <Card className="p-7"><StatusNote>No active rider assignment yet. A restaurant owner will assign your deliveries here.</StatusNote></Card>}</div><div className="mt-6 flex gap-3 rounded-2xl bg-orange-50 p-4 text-sm text-orange-900"><ShieldAlert className="h-5 w-5 shrink-0 text-saffron" /><p><strong>Keep this page open.</strong> Mobile browsers may suspend GPS in the background, so riders should keep the Rider Portal visible during active deliveries.</p></div></section></main>;
 }
